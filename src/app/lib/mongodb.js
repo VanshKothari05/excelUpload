@@ -3,22 +3,27 @@ import { MongoClient } from 'mongodb';
 const uri = process.env.MONGODB_URI;
 const options = {};
 
-let client;
-let clientPromise;
+let globalWithMongo = global;
+let cached = globalWithMongo._mongo;
 
-if (!process.env.MONGODB_URI) {
-  throw new Error('Please add your Mongo URI to .env.local');
+if (!cached) {
+  cached = globalWithMongo._mongo = { client: null, promise: null };
 }
 
-if (process.env.NODE_ENV === 'development') {
-  if (!global._mongoClientPromise) {
-    client = new MongoClient(uri, options);
-    global._mongoClientPromise = client.connect();
+export async function getMongoClient() {
+  if (!uri) {
+    throw new Error('MONGODB_URI is not defined');
   }
-  clientPromise = global._mongoClientPromise;
-} else {
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect();
+
+  if (cached.client) {
+    return cached.client;
+  }
+
+  if (!cached.promise) {
+    cached.promise = new MongoClient(uri, options).connect();
+  }
+
+  cached.client = await cached.promise;
+  return cached.client;
 }
 
-export default clientPromise;
