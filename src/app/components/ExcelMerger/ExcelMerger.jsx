@@ -8,6 +8,7 @@ import Tabs from "./Tabs";
 import UploadSection from "./UploadSection";
 import PreviewSection from "./PreviewSection";
 import DatabaseSection from "./DatabaseSection";
+import ColumnMappingModal from "./ColumnMappingModal";
 
 import styles from "./excelMerger.module.css";
 
@@ -80,60 +81,89 @@ export default function ExcelMerger() {
     return allHeaders;
   };
 
-  // ✅ Manual mapping init
-  const initializeColumnMappings = () => {
-    const headers = getAllHeaders();
-    const mappings = {};
-    headers.forEach((header) => {
-      mappings[header] = header;
-    });
-    setColumnMappings(mappings);
+  // ✅ Open advanced mapping modal
+  const openAdvancedMapping = () => {
     setShowColumnMapping(true);
   };
 
-  // ✅ Auto map similar headers like "srno" & "sr no"
+  // ✅ Auto map similar headers like "srno" & "sr no" WITH VISUAL FEEDBACK
   const autoMapHeaders = () => {
-    const headers = getAllHeaders();
-
-    const groups = {}; // normalized -> original list
-    headers.forEach((h) => {
-      const key = normalizeHeader(h);
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(h);
-    });
-
     const mappings = {};
 
-    Object.keys(groups).forEach((normKey) => {
-      const originals = groups[normKey];
-
-      let best = originals[0];
-
-      // ✅ force standard naming for SrNo group
-      if (
-        normKey.includes("sr") &&
-        (normKey.includes("no") || normKey === "srno")
-      ) {
-        best = "Sr No";
-      } else {
-        // longest = usually more readable
-        best = originals.sort((a, b) => b.length - a.length)[0];
-      }
-
-      originals.forEach((orig) => {
-        mappings[orig] = best;
+    files.forEach((file) => {
+      file.headers.forEach((header) => {
+        const key = `${file.id}::${header}`;
+        mappings[key] = header;
       });
     });
 
+    // Auto-detect similar headers across files
+    const headerGroups = {};
+    
+    files.forEach((file) => {
+      file.headers.forEach((header) => {
+        const normalized = normalizeHeader(header);
+        if (!headerGroups[normalized]) {
+          headerGroups[normalized] = [];
+        }
+        headerGroups[normalized].push({ fileId: file.id, header });
+      });
+    });
+
+    // Map similar headers to the same output column
+    let mappedCount = 0;
+    const mappingSummary = [];
+    
+    Object.keys(headerGroups).forEach((normKey) => {
+      const group = headerGroups[normKey];
+      
+      if (group.length > 1) {
+        let bestName = group[0].header;
+        
+        // Use standard naming for Sr No
+        if (normKey.includes("sr") && (normKey.includes("no") || normKey === "srno")) {
+          bestName = "Sr No";
+        } else {
+          bestName = group.sort((a, b) => b.header.length - a.header.length)[0].header;
+        }
+        
+        const originalNames = group.map(g => g.header).join(", ");
+        mappingSummary.push(`"${originalNames}" → "${bestName}"`);
+        
+        group.forEach(({ fileId, header }) => {
+          mappings[`${fileId}::${header}`] = bestName;
+          mappedCount++;
+        });
+      }
+    });
+
     setColumnMappings(mappings);
-    setShowColumnMapping(true);
+    
+    // ✅ Show feedback to user
+    if (mappingSummary.length > 0) {
+      alert(`✓ Auto-mapping applied!\n\n${mappingSummary.length} column group(s) mapped:\n\n${mappingSummary.join('\n')}\n\nClick "Advanced Mapping" to review or modify.`);
+    } else {
+      alert("ℹ️ No similar column names found across files.\n\nAll columns will use their original names.\n\nClick \"Advanced Mapping\" to manually map columns.");
+    }
   };
 
-  const updateColumnMapping = (originalColumn, newColumn) => {
-    setColumnMappings((prev) => ({
-      ...prev,
-      [originalColumn]: newColumn,
-    }));
+  // ✅ Apply mappings from the advanced modal
+  const applyAdvancedMapping = (newMappings) => {
+    setColumnMappings(newMappings);
+    setShowColumnMapping(false);
+    
+    // Count how many columns were actually mapped
+    let changedCount = 0;
+    Object.keys(newMappings).forEach((key) => {
+      const originalHeader = key.split('::')[1];
+      if (newMappings[key] !== originalHeader) {
+        changedCount++;
+      }
+    });
+    
+    if (changedCount > 0) {
+      alert(`✓ Mapping applied! ${changedCount} column(s) will be renamed during merge.`);
+    }
   };
 
   const handleFileUpload = (e) => {
@@ -250,17 +280,59 @@ export default function ExcelMerger() {
 
     let finalMappings = columnMappings;
 
-    // ✅ Mapping optional
+    // ✅ If no mapping specified, create default mapping
     if (!finalMappings || Object.keys(finalMappings).length === 0) {
       finalMappings = {};
-      getAllHeaders().forEach((h) => {
-        finalMappings[h] = h;
+      files.forEach((file) => {
+        file.headers.forEach((header) => {
+          finalMappings[`${file.id}::${header}`] = header;
+        });
       });
     }
 
+    // ✅ Extract dimension mappings and regular mappings
+    const dimensionMappings = {}; // { "Dimension": [{ columnName, separator, order, fileId, originalColumn }] }
+    const regularMappings = {};
+    
+    Object.keys(finalMappings).forEach((key) => {
+      const value = finalMappings[key];
+      
+      if (typeof value === 'string' && value.includes('::DIMENSION::')) {
+        // Format: "Dimension::DIMENSION::Length::×::0"
+        const parts = value.split('::');
+        const dimensionName = parts[0];
+        const originalColumnName = parts[2];
+        const separator = parts[3];
+        const order = parseInt(parts[4]);
+        
+        if (!dimensionMappings[dimensionName]) {
+          dimensionMappings[dimensionName] = [];
+        }
+        
+        const [fileId, originalColumn] = key.split('::');
+        dimensionMappings[dimensionName].push({
+          columnName: originalColumnName,
+          separator,
+          order,
+          fileId,
+          originalColumn,
+        });
+      } else {
+        regularMappings[key] = value;
+      }
+    });
+
+    // Sort dimension columns by order
+    Object.keys(dimensionMappings).forEach((dimName) => {
+      dimensionMappings[dimName].sort((a, b) => a.order - b.order);
+    });
+
     const mappedHeaders = new Set();
-    Object.values(finalMappings).forEach((mappedName) => {
+    Object.values(regularMappings).forEach((mappedName) => {
       if (mappedName) mappedHeaders.add(mappedName);
+    });
+    Object.keys(dimensionMappings).forEach((dimName) => {
+      mappedHeaders.add(dimName);
     });
 
     const merged = [];
@@ -274,15 +346,57 @@ export default function ExcelMerger() {
           mappedRow[h] = "";
         });
 
-        Object.keys(row).forEach((originalColumn) => {
-          const mappedColumn = finalMappings[originalColumn] || originalColumn;
-
-          if (row[originalColumn] !== undefined && row[originalColumn] !== "") {
-            if (mappedRow[mappedColumn]) {
-              mappedRow[mappedColumn] =
-                mappedRow[mappedColumn] + ", " + row[originalColumn];
+        // ✅ Handle dimension columns
+        Object.keys(dimensionMappings).forEach((dimName) => {
+          const dimCols = dimensionMappings[dimName];
+          const values = [];
+          
+          dimCols.forEach((dimCol) => {
+            if (dimCol.fileId === file.id) {
+              const value = row[dimCol.originalColumn];
+              if (value !== undefined && value !== null && value !== "") {
+                values.push(value);
+              }
+            }
+          });
+          
+          if (values.length > 0) {
+            const separator = dimCols[0].separator || "×";
+            const dimensionValue = values.join(` ${separator} `);
+            
+            if (mappedRow[dimName]) {
+              // If dimension already has a value from another file, keep the more complete one
+              const existingParts = mappedRow[dimName].split(separator).map(v => v.trim());
+              if (values.length > existingParts.length) {
+                mappedRow[dimName] = dimensionValue;
+              }
             } else {
-              mappedRow[mappedColumn] = row[originalColumn];
+              mappedRow[dimName] = dimensionValue;
+            }
+          }
+        });
+
+        // ✅ Handle regular columns
+        Object.keys(row).forEach((originalColumn) => {
+          const mappingKey = `${file.id}::${originalColumn}`;
+          
+          // Skip if this is a dimension column
+          const isDimension = Object.keys(dimensionMappings).some((dimName) => {
+            return dimensionMappings[dimName].some((dimCol) => 
+              dimCol.fileId === file.id && dimCol.originalColumn === originalColumn
+            );
+          });
+          
+          if (!isDimension) {
+            const mappedColumn = regularMappings[mappingKey] || originalColumn;
+
+            if (row[originalColumn] !== undefined && row[originalColumn] !== "") {
+              if (mappedRow[mappedColumn]) {
+                mappedRow[mappedColumn] =
+                  mappedRow[mappedColumn] + ", " + row[originalColumn];
+              } else {
+                mappedRow[mappedColumn] = row[originalColumn];
+              }
             }
           }
         });
@@ -291,7 +405,8 @@ export default function ExcelMerger() {
         const mappedLinkRow = {};
 
         Object.keys(linkRow).forEach((originalColumn) => {
-          const mappedColumn = finalMappings[originalColumn] || originalColumn;
+          const mappingKey = `${file.id}::${originalColumn}`;
+          const mappedColumn = regularMappings[mappingKey] || originalColumn;
           if (linkRow[originalColumn]) {
             mappedLinkRow[mappedColumn] = linkRow[originalColumn];
           }
@@ -547,11 +662,10 @@ export default function ExcelMerger() {
               updateFileHeaderMode={updateFileHeaderMode}
               updateManualHeaderIndex={updateManualHeaderIndex}
               showColumnMapping={showColumnMapping}
-              initializeColumnMappings={initializeColumnMappings}
-              autoMapHeaders={autoMapHeaders}   // ✅ NEW
+              openAdvancedMapping={openAdvancedMapping}
+              autoMapHeaders={autoMapHeaders}
               getAllHeaders={getAllHeaders}
               columnMappings={columnMappings}
-              updateColumnMapping={updateColumnMapping}
               mergeFiles={mergeFiles}
             />
           )}
@@ -583,6 +697,16 @@ export default function ExcelMerger() {
           )}
         </div>
       </div>
+
+      {/* ✅ Advanced Column Mapping Modal */}
+      {showColumnMapping && (
+        <ColumnMappingModal
+          files={files}
+          columnMappings={columnMappings}
+          onApply={applyAdvancedMapping}
+          onCancel={() => setShowColumnMapping(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,4 @@
-import { Upload, Trash2, Link2 } from "lucide-react";
-import styles from "./excelMerger.module.css";
+import styles from "./uploadSection.module.css";
 
 export default function UploadSection({
   files,
@@ -7,153 +6,151 @@ export default function UploadSection({
   clearFiles,
   updateFileHeaderMode,
   updateManualHeaderIndex,
-  showColumnMapping,
-  initializeColumnMappings,
-  autoMapHeaders, 
-  getAllHeaders,
-  columnMappings,
-  updateColumnMapping,
+  openAdvancedMapping,
+  autoMapHeaders,
   mergeFiles,
 }) {
   return (
-    <div>
-      <div className={styles.uploadBox}>
-        <Upload className={styles.uploadIcon} size={48} />
-        <label className={styles.uploadLabel}>
-          <span className={styles.uploadPrimary}>Click to upload</span>
-          <span className={styles.uploadSecondary}> or drag and drop</span>
-          <input
-            type="file"
-            multiple
-            accept=".xlsx,.xls"
-            onChange={onUpload}
-            style={{ display: "none" }}
-          />
+    <div className={styles.uploadSection}>
+      {/* Upload Area */}
+      <div className={styles.uploadArea}>
+        <label htmlFor="fileInput" className={styles.uploadLabel}>
+          <div className={styles.uploadIcon}>📁</div>
+          <div className={styles.uploadText}>
+            <strong>Click to upload</strong> or drag and drop
+          </div>
+          <div className={styles.uploadHint}>Excel files (.xlsx, .xls)</div>
         </label>
-        <p className={styles.helperText}>Excel files only (.xlsx, .xls)</p>
+        <input
+          id="fileInput"
+          type="file"
+          accept=".xlsx,.xls"
+          multiple
+          onChange={onUpload}
+          className={styles.fileInput}
+        />
       </div>
 
+      {/* Uploaded Files List */}
       {files.length > 0 && (
-        <div style={{ marginTop: "2rem" }}>
-          <div className={styles.sectionHeader}>
-            <h3 className={styles.sectionTitle}>Uploaded Files ({files.length})</h3>
-            <button className={`${styles.button} ${styles.danger}`} onClick={clearFiles}>
-              <Trash2 size={18} />
-              Clear All
+        <div className={styles.filesContainer}>
+          <div className={styles.filesHeader}>
+            <h3>📂 Uploaded Files ({files.length})</h3>
+            <button onClick={clearFiles} className={styles.clearBtn}>
+              🗑️ Clear All
             </button>
           </div>
 
-          {files.map((file) => (
-            <div key={file.id} className={styles.fileCard}>
-              <p className={styles.fileName}>{file.name}</p>
-              <p className={styles.fileMeta}>
-                {file.data.length} rows, {file.headers.length} columns
-              </p>
-
-              {/* Auto / Manual Header Row Controls */}
-              <div className={styles.headerRowControls}>
-                <div className={styles.headerRowGroup}>
-                  <label className={styles.labelStrong}>Header Mode:</label>
-                  <select
-                    value={file.mode}
-                    onChange={(e) => updateFileHeaderMode(file.id, e.target.value)}
-                    className={styles.input}
-                    style={{ maxWidth: 160 }}
-                  >
-                    <option value="auto">Auto</option>
-                    <option value="manual">Manual</option>
-                  </select>
+          <div className={styles.filesList}>
+            {files.map((file, idx) => (
+              <div key={file.id} className={styles.fileCard}>
+                <div className={styles.fileCardHeader}>
+                  <span className={styles.fileNumber}>File {idx + 1}</span>
+                  <span className={styles.fileName}>{file.name}</span>
                 </div>
 
-                <div className={styles.headerRowGroup}>
-                  <label className={styles.labelStrong}>Header Row:</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={
-                      (file.mode === "manual" ? file.manualHeaderIndex : file.autoHeaderIndex) + 1
-                    }
-                    disabled={file.mode !== "manual"}
-                    onChange={(e) => updateManualHeaderIndex(file.id, Number(e.target.value) - 1)}
-                    className={styles.input}
-                    style={{
-                      maxWidth: 120,
-                      opacity: file.mode === "manual" ? 1 : 0.6,
-                    }}
-                  />
-                </div>
-
-                <div className={styles.autoDetected}>
-                  Auto detected: Row {file.autoHeaderIndex + 1}
-                </div>
-              </div>
-
-              <div className={styles.headerBadges}>
-                {file.headers.map((h) => (
-                  <span key={h} className={styles.badge}>
-                    {h}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {/* ✅ Mapping Buttons */}
-          {!showColumnMapping ? (
-            <div style={{ display: "flex", gap: "12px", marginTop: "1rem", flexWrap: "wrap" }}>
-              <button
-                className={`${styles.button} ${styles.fullWidth}`}
-                onClick={initializeColumnMappings}
-                style={{ flex: 1 }}
-              >
-                <Link2 size={18} />
-                Map Columns (Manual)
-              </button>
-
-              <button
-                className={`${styles.button} ${styles.fullWidth}`}
-                onClick={autoMapHeaders}
-                style={{ flex: 1, background: "#38a169" }}
-              >
-                ✅ Auto Map Headers
-              </button>
-            </div>
-          ) : (
-            <div className={styles.mappingBox}>
-              <h4 className={styles.mappingTitle}>
-                Map Column Names (Combine columns by giving them the same name):
-              </h4>
-              <p className={styles.mappingTip}>
-                💡 Tip: If "Sr No" and "Item No" should be the same, rename both to "Number"
-              </p>
-
-              {getAllHeaders().map((header) => (
-                <div key={header} className={styles.mappingRow}>
-                  <div style={{ flex: 1 }}>
-                    <label className={styles.smallLabel}>Original Column:</label>
-                    <div className={styles.originalCol}>{header}</div>
+                <div className={styles.fileCardBody}>
+                  {/* Header Detection Mode */}
+                  <div className={styles.headerModeSection}>
+                    <label className={styles.label}>Header Detection:</label>
+                    <div className={styles.modeButtons}>
+                      <button
+                        onClick={() => updateFileHeaderMode(file.id, "auto")}
+                        className={`${styles.modeBtn} ${
+                          file.mode === "auto" ? styles.active : ""
+                        }`}
+                      >
+                         Auto
+                      </button>
+                      <button
+                        onClick={() => updateFileHeaderMode(file.id, "manual")}
+                        className={`${styles.modeBtn} ${
+                          file.mode === "manual" ? styles.active : ""
+                        }`}
+                      >
+                         Manual
+                      </button>
+                    </div>
                   </div>
 
-                  <div className={styles.arrow}>→</div>
+                  {/* Manual Header Row Selection */}
+                  {file.mode === "manual" && (
+                    <div className={styles.manualIndexSection}>
+                      <label className={styles.label}>Header Row Index:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={file.manualHeaderIndex}
+                        onChange={(e) =>
+                          updateManualHeaderIndex(file.id, e.target.value)
+                        }
+                        className={styles.numberInput}
+                      />
+                      <span className={styles.hint}>
+                        (0 = first row, 1 = second row, etc.)
+                      </span>
+                    </div>
+                  )}
 
-                  <div style={{ flex: 1 }}>
-                    <label className={styles.smallLabel}>Mapped To:</label>
-                    <input
-                      value={columnMappings[header] || ""}
-                      onChange={(e) => updateColumnMapping(header, e.target.value)}
-                      onFocus={(e) => e.target.select()}
-                      className={styles.input}
-                      placeholder="Enter column name"
-                    />
+                  {/* Headers Preview */}
+                  <div className={styles.headersSection}>
+                    <label className={styles.label}>
+                      Detected Headers ({file.headers.length}):
+                    </label>
+                    <div className={styles.headersList}>
+                      {file.headers.map((header, idx) => (
+                        <span key={idx} className={styles.headerTag}>
+                          {header}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Data Preview */}
+                  <div className={styles.dataPreview}>
+                    <label className={styles.label}>
+                      Data Rows: {file.data.length}
+                    </label>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            ))}
+          </div>
 
-          <button className={`${styles.button} ${styles.fullWidth}`} onClick={mergeFiles}>
-            Merge Files
-          </button>
+          {/* Mapping & Merge Actions */}
+          <div className={styles.actionsSection}>
+            <div className={styles.mappingButtons}>
+              <button
+                onClick={openAdvancedMapping}
+                className={styles.advancedMapBtn}
+              >
+                🔗 Advanced Column Mapping
+              </button>
+              <button onClick={autoMapHeaders} className={styles.autoMapBtn}>
+                ⚡ Auto-Map Similar Columns
+              </button>
+            </div>
+
+            <button onClick={mergeFiles} className={styles.mergeBtn}>
+              ✨ Merge Files
+            </button>
+          </div>
+
+          {/* Info Box */}
+          <div className={styles.infoBox}>
+            <h4>💡 How Column Mapping Works:</h4>
+            <ul>
+              <li>
+                <strong>Advanced Mapping:</strong> Manually map columns between files or merge them
+              </li>
+              <li>
+                <strong>Auto-Map:</strong> Automatically detect and merge similar column names
+              </li>
+              <li>
+                <strong>Direct Merge:</strong> Skip mapping and merge with original column names
+              </li>
+            </ul>
+          </div>
         </div>
       )}
     </div>
