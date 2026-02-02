@@ -71,6 +71,68 @@ export default function ExcelMerger() {
     );
   };
 
+  // ✅ Diamond industry column synonyms mapping
+  const getStandardColumnName = (header) => {
+    const normalized = normalizeHeader(header);
+    
+    // Define synonym groups with standard name (LHS) and all variations (RHS)
+    const synonymGroups = {
+      "Weight": ["weight", "carats", "cts", "ct", "carat"],
+      "Color": ["color", "col", "colour"],
+      "Fancy Color": ["fancy color", "fancy col", "fan colour", "fancy colour"],
+      "Clarity": ["clarity", "purity", "cla", "pur"],
+      "Polish": ["polish", "pol"],
+      "Stone ID": ["stone id", "stock id", "packet no", "stone no", "stone id no","id"],
+      "Fluorescence": ["fluor", "fluorescence", "fl", "flo"],
+      "Shade": ["shade", "tinge", "cs"],
+      "Symmetry": ["symmetry", "sym"],
+      "Price": ["price", "pri", "pr/ct", "pr ct"],
+      "Discount": ["discount", "dis%", "rep%", "back", "disc", "dis"],
+      "Amount": ["amount", "sele amount", "total amount", "amt", "total price", "total value", "value"],
+      "Rap Price": ["rap price", "rap", "rap rate", "rap list", "base rate", "base value"],
+      "Lab": ["lab"],
+      "Measurement": ["measurement", "meas", "measm", "measurment"],
+      "Height": ["height"],
+      "Ratio": ["ratio", "l/w", "l w"],
+      "Girdle": ["girdle", "girdal%", "gir", "girdie desc", "girdal"],
+      "Depth": ["depth", "dep%", "td%", "total depth", "dep"],
+      "Table": ["table", "tab%", "tab", "table%"],
+      "Inclusion": ["inclusion", "inclusion ditel", "inc", "inclusion detail"],
+      "Black Inclusion": ["black inclusion", "black"],
+      "White Inclusion": ["white inclusion", "white"],
+      "Table Inclusion": ["table inclusion", "tab inclusion", "tblincl", "incl", "table open"],
+      "Ind Natural": ["ind natural"],
+      "Pav Open": ["pav open", "pv opn"],
+      "Cr Open": ["cr open", "cr opn"],
+      "Cr Ex Open": ["cr ex open"],
+      "Pav Ex Facet": ["pav ex facet"],
+      "Milky": ["milky", "mil"],
+      "Lab Comments": ["lab comments", "lab comment", "comment"],
+      "Add Comments": ["add comments", "additional comments", "additonal comments"],
+      "Type IIa": ["type iia", "type2a", "type 2a"],
+      "Key To Symbols": ["key to symbols", "key to sym"],
+      "Side Inclusion": ["side inclusion", "side incl"],
+      "Eyeclean": ["eyeclean", "ec"],
+      "Pavilion Angle": ["pavilion angle", "pavelion angal", "pv%", "pvangl", "pv>", "pv"],
+      "Crown Angle": ["crown angle", "crown angal", "cr%", "crang", "cr>", "cr"],
+      "Crown Height": ["crown height", "crown hight", "crh%", "crh", "crhgt", "cr hgt%", "cr hgt"],
+      "Pavilion Height": ["pavilion height", "pavelion hight", "pvh%", "pvh", "pvhgt", "pav hgt%", "pav hgt"],
+      "H&A": ["h&a", "ha", "heart and arrow", "hearts and arrows"],
+      "Culet": ["culet", "cul"],
+      "Luster": ["luster", "lus"]
+    };
+
+    // Find matching standard name
+    for (const [standardName, variations] of Object.entries(synonymGroups)) {
+      if (variations.includes(normalized)) {
+        return standardName;
+      }
+    }
+
+    // If no match found, return original header with proper capitalization
+    return header;
+  };
+
   const getAllHeaders = () => {
     const allHeaders = [];
     files.forEach((file) => {
@@ -86,55 +148,41 @@ export default function ExcelMerger() {
     setShowColumnMapping(true);
   };
 
-  // ✅ Auto map similar headers like "srno" & "sr no" WITH VISUAL FEEDBACK
+  // ✅ Auto map similar headers with domain-specific synonyms
   const autoMapHeaders = () => {
     const mappings = {};
-
-    files.forEach((file) => {
-      file.headers.forEach((header) => {
-        const key = `${file.id}::${header}`;
-        mappings[key] = header;
-      });
-    });
-
-    // Auto-detect similar headers across files
     const headerGroups = {};
     
+    // Group headers by their standard name
     files.forEach((file) => {
       file.headers.forEach((header) => {
-        const normalized = normalizeHeader(header);
-        if (!headerGroups[normalized]) {
-          headerGroups[normalized] = [];
+        const standardName = getStandardColumnName(header);
+        
+        if (!headerGroups[standardName]) {
+          headerGroups[standardName] = [];
         }
-        headerGroups[normalized].push({ fileId: file.id, header });
+        headerGroups[standardName].push({ fileId: file.id, header });
       });
     });
 
-    // Map similar headers to the same output column
     let mappedCount = 0;
     const mappingSummary = [];
     
-    Object.keys(headerGroups).forEach((normKey) => {
-      const group = headerGroups[normKey];
+    // Create mappings
+    Object.keys(headerGroups).forEach((standardName) => {
+      const group = headerGroups[standardName];
       
+      // If multiple columns map to same standard name, show in summary
       if (group.length > 1) {
-        let bestName = group[0].header;
-        
-        // Use standard naming for Sr No
-        if (normKey.includes("sr") && (normKey.includes("no") || normKey === "srno")) {
-          bestName = "Sr No";
-        } else {
-          bestName = group.sort((a, b) => b.header.length - a.header.length)[0].header;
-        }
-        
         const originalNames = group.map(g => g.header).join(", ");
-        mappingSummary.push(`"${originalNames}" → "${bestName}"`);
-        
-        group.forEach(({ fileId, header }) => {
-          mappings[`${fileId}::${header}`] = bestName;
-          mappedCount++;
-        });
+        mappingSummary.push(`"${originalNames}" → "${standardName}"`);
+        mappedCount += group.length;
       }
+      
+      // Map all variations to the standard name
+      group.forEach(({ fileId, header }) => {
+        mappings[`${fileId}::${header}`] = standardName;
+      });
     });
 
     setColumnMappings(mappings);
@@ -143,7 +191,7 @@ export default function ExcelMerger() {
     if (mappingSummary.length > 0) {
       alert(`✓ Auto-mapping applied!\n\n${mappingSummary.length} column group(s) mapped:\n\n${mappingSummary.join('\n')}\n\nClick "Advanced Mapping" to review or modify.`);
     } else {
-      alert("ℹ️ No similar column names found across files.\n\nAll columns will use their original names.\n\nClick \"Advanced Mapping\" to manually map columns.");
+      alert("ℹ️ All columns already use standard names.\n\nClick \"Advanced Mapping\" to manually map columns if needed.");
     }
   };
 
@@ -268,6 +316,64 @@ export default function ExcelMerger() {
     setColumnMappings({});
   };
 
+  // ✅ Helper to detect if a row is a summary row (Total/Average) or footer/disclaimer
+  const isSummaryRow = (row) => {
+    if (!row) return false;
+    
+    // Get all non-empty values from the row
+    const allValues = Object.values(row).filter(v => 
+      v !== null && v !== undefined && String(v).trim() !== ""
+    );
+    
+    // If row is completely empty, skip it
+    if (allValues.length === 0) return true;
+    
+    // Check first few columns for "Total", "Average", "Sum", "Grand Total" etc.
+    const firstValues = Object.values(row).slice(0, 3).map(v => 
+      String(v || "").toLowerCase().trim()
+    );
+    
+    const summaryKeywords = ["total", "average", "avg", "sum", "grand total", "subtotal"];
+    
+    if (firstValues.some(val => summaryKeywords.includes(val))) {
+      return true;
+    }
+    
+    // Check for footer/disclaimer rows
+    // These often start with "1)", "2)", "3)" or contain long text
+    const firstValue = String(allValues[0] || "").trim();
+    
+    // Pattern: "1) Something...", "2) Something...", etc.
+    if (/^\d+\)/.test(firstValue)) {
+      return true;
+    }
+    
+    // Check if row contains disclaimer-like text (long sentences with certain keywords)
+    const rowText = allValues.join(" ").toLowerCase();
+    const disclaimerKeywords = [
+      "availability",
+      "prices are subject to change",
+      "not liable",
+      "disclaimer",
+      "refer our website",
+      "please contact",
+      "detailed and in-depth",
+      "shown in brackets",
+      "for match-pair pieces"
+    ];
+    
+    if (disclaimerKeywords.some(keyword => rowText.includes(keyword))) {
+      return true;
+    }
+    
+    // If first column contains very long text (>100 chars), likely a footer note
+    if (firstValue.length > 100) {
+      return true;
+    }
+    
+    return false;
+  };
+
   const mergeFiles = () => {
     if (files.length === 0) {
       alert("Please upload at least one file");
@@ -340,6 +446,11 @@ export default function ExcelMerger() {
 
     files.forEach((file) => {
       file.data.forEach((row, rIdx) => {
+        // ✅ Skip Total, Average, and other summary rows
+        if (isSummaryRow(row)) {
+          return;
+        }
+
         const mappedRow = {};
 
         Array.from(mappedHeaders).forEach((h) => {

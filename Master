@@ -1,0 +1,43 @@
+weight - carats, cts, ct 
+color - col, colour,color
+fancy color-fancy col,fan colour
+clarity-purity,cla,pur
+polish-pol
+stone id - stock id, packet no, stone no, stone id no
+Fluor - Fluorescence , fl, flo
+shade - tinge,cs
+Symmetry-sym
+price-pri,pr/ct
+discount-dis%,rep%,back,disc
+Amount-sele amount,total amount,amt,total price,total value,value
+rap price-rap,rap rate,rap list,base rate,base value
+lab-lab
+measurment-meas,measm
+height-
+ratio-l/w
+girdle-girdal%,gir,girdie desc
+depth-dep%,TD%,total depth
+table-tab%,tab,table%
+inclusion-inclusion ditel,inc
+black inclusion- black
+white inclusion- white
+table inclusion-tab inclusion,tblincl,incl,table open
+ind natural-
+pav open- pv opn
+cr open- cr opn
+cr ex open-
+pav_ex_facet-
+milky-mil
+lab comments-lab comment,comment
+add comments-additonal comments
+type IIa- type2a
+key to syembols-key to sym
+side inclusion- side incl
+eyeclean-ec
+pavelion angal- pv%,pvangl,pv>
+crown angal- cr%,crang,cr>
+crown hight-crh%,crh,crhgt,cr hgt%
+pavelion hight-pvh%,pvh,pvhgt,pav hgt%
+h&a-ha,heart and arrow
+culet-cul
+luster-lus
