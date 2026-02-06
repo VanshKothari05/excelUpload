@@ -19,6 +19,10 @@ import {
 } from "@/app/lib/excelUtils";
 
 export default function ExcelMerger() {
+  // ✅ STEP 1 - Add autoMapped and manualMapped states
+  const [autoMapped, setAutoMapped] = useState({});
+  const [manualMapped, setManualMapped] = useState({});
+
   const [files, setFiles] = useState([]);
   const [mergedData, setMergedData] = useState(null);
   const [savedRecords, setSavedRecords] = useState([]);
@@ -54,6 +58,13 @@ export default function ExcelMerger() {
       .replace(/\./g, "")
       .replace(/_/g, " ")
       .replace(/\s+/g, " ")
+      .replace(/\s*%\s*/g, "%")
+      .replace(/\s*\/\s*/g, "/")
+      .replace(/\s*>\s*/g, ">")
+      .replace(/\s*#\s*/g, "#")
+      .replace(/\s*&\s*/g, "&")
+      .replace(/\s*:\s*/g, ":")
+      .replace(/:/g, "/")
       .trim();
   };
 
@@ -73,53 +84,91 @@ export default function ExcelMerger() {
 
   // ✅ Diamond industry column synonyms mapping
   const getStandardColumnName = (header) => {
+    // ✅ CRITICAL: Check Sr No BEFORE normalizing
+    if (isSrNoColumn(header)) {
+      return "Sr No";
+    }
+    
     const normalized = normalizeHeader(header);
     
     // Define synonym groups with standard name (LHS) and all variations (RHS)
     const synonymGroups = {
       "Weight": ["weight", "carats", "cts", "ct", "carat"],
       "Color": ["color", "col", "colour"],
-      "Fancy Color": ["fancy color", "fancy col", "fan colour", "fancy colour"],
+      "Fancy Color": ["fancy color", "fancy col", "fan colour", "fancy colour", "fl col"],
       "Clarity": ["clarity", "purity", "cla", "pur"],
-      "Polish": ["polish", "pol"],
-      "Stone ID": ["stone id", "stock id", "packet no", "stone no", "stone id no","id"],
-      "Fluorescence": ["fluor", "fluorescence", "fl", "flo"],
-      "Shade": ["shade", "tinge", "cs"],
+      "Polish": ["polish", "pol", "polished"],
+      "Stone ID": ["stone id", "stock id", "packet no", "stone no", "stone id no", "id"],
+      "Fluorescence": ["fluorescence", "fluor", "fl", "flo"],
+      "Fluorescence Image": ["fluro"],
+      "Shade": ["shade", "tinge", "cs", "color shade"],
       "Symmetry": ["symmetry", "sym"],
-      "Price": ["price", "pri", "pr/ct", "pr ct"],
-      "Discount": ["discount", "dis%", "rep%", "back", "disc", "dis"],
-      "Amount": ["amount", "sele amount", "total amount", "amt", "total price", "total value", "value"],
-      "Rap Price": ["rap price", "rap", "rap rate", "rap list", "base rate", "base value"],
+      "Price": ["price", "pri", "pr/ct", "pr ct", "price/cts inr", "prct"],
+      "Discount": ["discount", "dis%", "disc%", "rep%", "back", "disc", "dis"],
+      "Amount": ["amount", "sele amount", "total amount", "amt", "total price", "total value", "value", "total amt"],
+      "Rap Price": ["rap price", "rap", "rap rate", "rap list", "base rate", "base value", "baserate"],
       "Lab": ["lab"],
       "Measurement": ["measurement", "meas", "measm", "measurment"],
       "Height": ["height"],
-      "Ratio": ["ratio", "l/w", "l w"],
-      "Girdle": ["girdle", "girdal%", "gir", "girdie desc", "girdal"],
-      "Depth": ["depth", "dep%", "td%", "total depth", "dep"],
-      "Table": ["table", "tab%", "tab", "table%"],
+      "Ratio": ["ratio", "l/w", "l w", "lw"],
+      "Girdle": ["girdle", "girdal%", "gir", "girdie desc", "girdal", "grd%", "grd %"],
+      "Depth": ["depth", "dep%", "td%", "total depth", "dep", "depth%", "depth %"],
+      "Table": ["table", "tab%", "tab", "table%", "table %"],
       "Inclusion": ["inclusion", "inclusion ditel", "inc", "inclusion detail"],
-      "Black Inclusion": ["black inclusion", "black"],
-      "White Inclusion": ["white inclusion", "white"],
-      "Table Inclusion": ["table inclusion", "tab inclusion", "tblincl", "incl", "table open"],
+      "Inclusion Pattern": ["incl ptrn", "inclusion pattern", "incl pattern"],
+      "Black Inclusion": ["black inclusion", "black", "blk incl", "blk"],
+      "White Inclusion": ["white inclusion", "white", "wht incl", "wht"],
+      "Table Inclusion": ["table inclusion", "tab inclusion", "tblincl", "incl", "table open", "tbl incl", "table incl"],
       "Ind Natural": ["ind natural"],
-      "Pav Open": ["pav open", "pv opn"],
-      "Cr Open": ["cr open", "cr opn"],
+      "Naturals": ["natts", "naturals", "natural"],
+      "Pav Open": ["pav open", "pv opn", "pav opn"],
+      "Cr Open": ["cr open", "cr opn", "crn opn"],
       "Cr Ex Open": ["cr ex open"],
-      "Pav Ex Facet": ["pav ex facet"],
+      "Cr Ex Facet": ["cr ex facet"],
+      "Pav Ex Facet": ["pav ex facet", "pav_ex_facet"],
       "Milky": ["milky", "mil"],
-      "Lab Comments": ["lab comments", "lab comment", "comment"],
-      "Add Comments": ["add comments", "additional comments", "additonal comments"],
-      "Type IIa": ["type iia", "type2a", "type 2a"],
-      "Key To Symbols": ["key to symbols", "key to sym"],
+      "Lab Comments": ["lab comments", "lab comment", "comment", "lab commnt"],
+      "Add Comments": ["add comments", "additional comments", "additonal comments", "addl comments"],
+      "Type IIa": ["type iia", "type2a", "type 2a", "type iia"],
+      "Key To Symbols": ["key to symbols", "key to sym", "key to symbol"],
       "Side Inclusion": ["side inclusion", "side incl"],
-      "Eyeclean": ["eyeclean", "ec"],
-      "Pavilion Angle": ["pavilion angle", "pavelion angal", "pv%", "pvangl", "pv>", "pv"],
+      "Eyeclean": ["eyeclean", "ec", "eye clean", "naked eye"],
+      "Pavilion Angle": ["pavilion angle", "pavelion angal", "pv%", "pvangl", "pv>", "pv", "pav>"],
       "Crown Angle": ["crown angle", "crown angal", "cr%", "crang", "cr>", "cr"],
       "Crown Height": ["crown height", "crown hight", "crh%", "crh", "crhgt", "cr hgt%", "cr hgt"],
       "Pavilion Height": ["pavilion height", "pavelion hight", "pvh%", "pvh", "pvhgt", "pav hgt%", "pav hgt"],
-      "H&A": ["h&a", "ha", "heart and arrow", "hearts and arrows"],
+      "H&A": ["h&a", "ha", "heart and arrow", "hearts and arrows", "hearts & arrows", "hearts&arrows"],
       "Culet": ["culet", "cul"],
-      "Luster": ["luster", "lus"]
+      "Luster": ["luster", "lus"],
+      "Status": ["status", "status/location", "status / location"],
+      "Certificate": ["cert", "certificate", "certif"],
+      "Shape": ["shape"],
+      "Cut": ["cut"],
+      "Type2 Certificate": ["type2 certi", "type2 cert", "type 2 cert"],
+      "Front Hand": ["front hand"],
+      "Back Hand": ["back hand"],
+      "Tweezer": ["tweezer"],
+      "Light Video": ["light video"],
+      "Dark Video": ["dark video"],
+      "Video with Details": ["video with details"],
+      "MP4 Video": ["mp4 video"],
+      "Plotting": ["plotting"],
+      "Journey": ["journey"],
+      "Consumer Video": ["consumer video"],
+      "ASET": ["aset"],
+      "Disc Price": ["disc price"],
+      "Disc Total": ["disc total"],
+      "View DNA": ["view dna"],
+      "Rating": ["rating"],
+      "CM": ["cm"],
+      "LOC": ["loc"],
+      "FE": ["fe"],
+      "Int Grn": ["int grn"],
+      "Int Grn Typ": ["int grn typ"],
+      "Tbl Opn": ["tbl opn"],
+      "Grd Crn Opn": ["grd crn opn"],
+      "Table Black": ["table black"],
+      "LP": ["lp"]
     };
 
     // Find matching standard name
@@ -129,7 +178,7 @@ export default function ExcelMerger() {
       }
     }
 
-    // If no match found, return original header with proper capitalization
+    // ✅ FIX: If no match found, return original header
     return header;
   };
 
@@ -148,51 +197,47 @@ export default function ExcelMerger() {
     setShowColumnMapping(true);
   };
 
-  // ✅ Auto map similar headers with domain-specific synonyms
+  // ✅ STEP 2 - Auto map similar headers with state management
   const autoMapHeaders = () => {
+    if (files.length < 2) {
+      alert("Upload at least 2 files");
+      return;
+    }
+
     const mappings = {};
     const headerGroups = {};
-    
-    // Group headers by their standard name
+
+    // group similar headers
     files.forEach((file) => {
       file.headers.forEach((header) => {
-        const standardName = getStandardColumnName(header);
-        
-        if (!headerGroups[standardName]) {
-          headerGroups[standardName] = [];
-        }
-        headerGroups[standardName].push({ fileId: file.id, header });
+        const standard = getStandardColumnName(header);
+
+        if (!headerGroups[standard]) headerGroups[standard] = [];
+        headerGroups[standard].push({ fileId: file.id, header });
       });
     });
 
-    let mappedCount = 0;
-    const mappingSummary = [];
-    
-    // Create mappings
-    Object.keys(headerGroups).forEach((standardName) => {
-      const group = headerGroups[standardName];
-      
-      // If multiple columns map to same standard name, show in summary
+    Object.keys(headerGroups).forEach((standard) => {
+      const group = headerGroups[standard];
+
       if (group.length > 1) {
-        const originalNames = group.map(g => g.header).join(", ");
-        mappingSummary.push(`"${originalNames}" → "${standardName}"`);
-        mappedCount += group.length;
+        group.forEach(({ fileId, header }) => {
+          const key = `${fileId}::${header}`;
+          mappings[key] = standard;
+        });
       }
-      
-      // Map all variations to the standard name
-      group.forEach(({ fileId, header }) => {
-        mappings[`${fileId}::${header}`] = standardName;
-      });
     });
 
     setColumnMappings(mappings);
-    
-    // ✅ Show feedback to user
-    if (mappingSummary.length > 0) {
-      alert(`✓ Auto-mapping applied!\n\n${mappingSummary.length} column group(s) mapped:\n\n${mappingSummary.join('\n')}\n\nClick "Advanced Mapping" to review or modify.`);
-    } else {
-      alert("ℹ️ All columns already use standard names.\n\nClick \"Advanced Mapping\" to manually map columns if needed.");
-    }
+
+    // ✅ STEP 2 - Set autoMapped state
+    const auto = {};
+    Object.keys(mappings).forEach(k => {
+      auto[k] = true;
+    });
+
+    setAutoMapped(auto);
+    setManualMapped({});
   };
 
   // ✅ Apply mappings from the advanced modal
@@ -340,7 +385,6 @@ export default function ExcelMerger() {
     }
     
     // Check for footer/disclaimer rows
-    // These often start with "1)", "2)", "3)" or contain long text
     const firstValue = String(allValues[0] || "").trim();
     
     // Pattern: "1) Something...", "2) Something...", etc.
@@ -348,7 +392,7 @@ export default function ExcelMerger() {
       return true;
     }
     
-    // Check if row contains disclaimer-like text (long sentences with certain keywords)
+    // Check if row contains disclaimer-like text
     const rowText = allValues.join(" ").toLowerCase();
     const disclaimerKeywords = [
       "availability",
@@ -386,25 +430,35 @@ export default function ExcelMerger() {
 
     let finalMappings = columnMappings;
 
-    // ✅ If no mapping specified, create default mapping
-    if (!finalMappings || Object.keys(finalMappings).length === 0) {
-      finalMappings = {};
-      files.forEach((file) => {
-        file.headers.forEach((header) => {
-          finalMappings[`${file.id}::${header}`] = header;
-        });
+    // ✅ ALWAYS create complete mapping for ALL columns from ALL files
+    const completeMappings = {};
+    files.forEach((file) => {
+      file.headers.forEach((header) => {
+        const mappingKey = `${file.id}::${header}`;
+        
+        // If user has set a custom mapping, use it
+        if (finalMappings && finalMappings[mappingKey]) {
+          completeMappings[mappingKey] = finalMappings[mappingKey];
+        } else {
+          // Otherwise use standard name from synonyms
+          completeMappings[mappingKey] = getStandardColumnName(header);
+        }
       });
-    }
+    });
+
+    console.log("=== COMPLETE MAPPINGS ===");
+    console.log(completeMappings);
+
+    finalMappings = completeMappings;
 
     // ✅ Extract dimension mappings and regular mappings
-    const dimensionMappings = {}; // { "Dimension": [{ columnName, separator, order, fileId, originalColumn }] }
+    const dimensionMappings = {};
     const regularMappings = {};
-    
+   
     Object.keys(finalMappings).forEach((key) => {
       const value = finalMappings[key];
       
       if (typeof value === 'string' && value.includes('::DIMENSION::')) {
-        // Format: "Dimension::DIMENSION::Length::×::0"
         const parts = value.split('::');
         const dimensionName = parts[0];
         const originalColumnName = parts[2];
@@ -433,18 +487,30 @@ export default function ExcelMerger() {
       dimensionMappings[dimName].sort((a, b) => a.order - b.order);
     });
 
+    // ✅ Collect ONLY the unique mapped column names
     const mappedHeaders = new Set();
+    
+    // Add regular column mappings
     Object.values(regularMappings).forEach((mappedName) => {
-      if (mappedName) mappedHeaders.add(mappedName);
+      if (mappedName && typeof mappedName === 'string' && !mappedName.includes('::DIMENSION::')) {
+        mappedHeaders.add(mappedName);
+      }
     });
+    
+    // Add dimension column names
     Object.keys(dimensionMappings).forEach((dimName) => {
       mappedHeaders.add(dimName);
     });
+
+    console.log("=== MAPPED HEADERS (should be unique) ===");
+    console.log(Array.from(mappedHeaders));
 
     const merged = [];
     const mergedHyperlinks = {};
 
     files.forEach((file) => {
+      console.log(`\n=== Processing File: ${file.name} ===`);
+      
       file.data.forEach((row, rIdx) => {
         // ✅ Skip Total, Average, and other summary rows
         if (isSummaryRow(row)) {
@@ -453,6 +519,7 @@ export default function ExcelMerger() {
 
         const mappedRow = {};
 
+        // ✅ Initialize all mapped headers with empty strings
         Array.from(mappedHeaders).forEach((h) => {
           mappedRow[h] = "";
         });
@@ -476,7 +543,6 @@ export default function ExcelMerger() {
             const dimensionValue = values.join(` ${separator} `);
             
             if (mappedRow[dimName]) {
-              // If dimension already has a value from another file, keep the more complete one
               const existingParts = mappedRow[dimName].split(separator).map(v => v.trim());
               if (values.length > existingParts.length) {
                 mappedRow[dimName] = dimensionValue;
@@ -486,6 +552,33 @@ export default function ExcelMerger() {
             }
           }
         });
+
+        // ⭐ FINAL: BUILD L*W*H INTO MEASUREMENT COLUMN
+        let heightVal = "";
+        let lwVal = "";
+
+        Object.keys(row).forEach(col => {
+          const v = row[col];
+          if (!v) return;
+
+          const lower = col.toLowerCase();
+
+          if (lower.includes("height")) {
+            heightVal = v;
+          }
+
+          if (String(v).includes("*") && !lower.includes("height")) {
+            lwVal = v;
+          }
+        });
+
+        if (lwVal && heightVal) {
+          Object.keys(mappedRow).forEach(h => {
+            if (h.toLowerCase().includes("measurement")) {
+              mappedRow[h] = `${lwVal}*${heightVal}`;
+            }
+          });
+        }
 
         // ✅ Handle regular columns
         Object.keys(row).forEach((originalColumn) => {
@@ -499,26 +592,35 @@ export default function ExcelMerger() {
           });
           
           if (!isDimension) {
-            const mappedColumn = regularMappings[mappingKey] || originalColumn;
-
-            if (row[originalColumn] !== undefined && row[originalColumn] !== "") {
-              if (mappedRow[mappedColumn]) {
-                mappedRow[mappedColumn] =
-                  mappedRow[mappedColumn] + ", " + row[originalColumn];
-              } else {
-                mappedRow[mappedColumn] = row[originalColumn];
+            const mappedColumn = regularMappings[mappingKey];
+            
+            if (!mappedColumn) {
+              console.warn(`⚠️ No mapping found for: ${mappingKey}`);
+            }
+            
+            if (mappedColumn) {
+              const value = row[originalColumn];
+              
+              if (value !== undefined && value !== null && value !== "") {
+                if (mappedRow[mappedColumn] && mappedRow[mappedColumn] !== "") {
+                  mappedRow[mappedColumn] = mappedRow[mappedColumn] + ", " + value;
+                } else {
+                  mappedRow[mappedColumn] = value;
+                }
               }
             }
           }
         });
 
+        // ✅ Handle hyperlinks
         const linkRow = file.hyperlinks?.[rIdx] || {};
         const mappedLinkRow = {};
 
         Object.keys(linkRow).forEach((originalColumn) => {
           const mappingKey = `${file.id}::${originalColumn}`;
-          const mappedColumn = regularMappings[mappingKey] || originalColumn;
-          if (linkRow[originalColumn]) {
+          const mappedColumn = regularMappings[mappingKey];
+          
+          if (mappedColumn && linkRow[originalColumn]) {
             mappedLinkRow[mappedColumn] = linkRow[originalColumn];
           }
         });
@@ -530,6 +632,8 @@ export default function ExcelMerger() {
 
     // ✅ Sr No continuous numbering after merge
     const srNoHeader = Array.from(mappedHeaders).find((h) => isSrNoColumn(h));
+    console.log("=== SR NO HEADER FOUND ===", srNoHeader);
+    
     if (srNoHeader) {
       let counter = 1;
       merged.forEach((row) => {
@@ -537,6 +641,26 @@ export default function ExcelMerger() {
         counter++;
       });
     }
+
+    console.log("=== FINAL MERGED DATA HEADERS ===");
+    console.log(Array.from(mappedHeaders));
+
+    // ⭐ AUTO HIDE only Meas MM and Height columns (since they're merged into Measurement)
+    const autoHide = new Set(hiddenColumns);
+
+    Array.from(mappedHeaders).forEach((h) => {
+      const lower = h.toLowerCase();
+
+      // Only hide Meas MM and Height - they're merged into Measurement column
+      if (
+        (lower.includes("meas") && lower.includes("mm")) ||
+        lower === "height"
+      ) {
+        autoHide.add(h);
+      }
+    });
+
+    setHiddenColumns(autoHide);
 
     setMergedData({
       headers: Array.from(mappedHeaders),
@@ -772,12 +896,13 @@ export default function ExcelMerger() {
               clearFiles={clearFiles}
               updateFileHeaderMode={updateFileHeaderMode}
               updateManualHeaderIndex={updateManualHeaderIndex}
-              showColumnMapping={showColumnMapping}
-              openAdvancedMapping={openAdvancedMapping}
               autoMapHeaders={autoMapHeaders}
-              getAllHeaders={getAllHeaders}
-              columnMappings={columnMappings}
               mergeFiles={mergeFiles}
+              columnMappings={columnMappings}
+              setColumnMappings={setColumnMappings}
+              autoMapped={autoMapped}
+              manualMapped={manualMapped}
+              setManualMapped={setManualMapped}
             />
           )}
 
