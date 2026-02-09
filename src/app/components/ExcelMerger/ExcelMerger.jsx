@@ -22,6 +22,8 @@ export default function ExcelMerger() {
   // ✅ STEP 1 - Add autoMapped and manualMapped states
   const [autoMapped, setAutoMapped] = useState({});
   const [manualMapped, setManualMapped] = useState({});
+  const [showMergedPairs, setShowMergedPairs] = useState(false);
+const [mergedPairsData, setMergedPairsData] = useState({});
 
   const [files, setFiles] = useState([]);
   const [mergedData, setMergedData] = useState(null);
@@ -67,6 +69,29 @@ export default function ExcelMerger() {
       .replace(/:/g, "/")
       .trim();
   };
+  // Load saved manual mappings from localStorage
+const loadSavedMappings = () => {
+  try {
+    const saved = localStorage.getItem('manualColumnMappings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setManualMapped(parsed);
+      return parsed;
+    }
+  } catch (error) {
+    console.error('Failed to load saved mappings:', error);
+  }
+  return {};
+};
+
+// Save manual mappings to localStorage
+const saveMappingsToStorage = (mappings) => {
+  try {
+    localStorage.setItem('manualColumnMappings', JSON.stringify(mappings));
+  } catch (error) {
+    console.error('Failed to save mappings:', error);
+  }
+};
 
   // ✅ Detect Sr No column key (works for sr no, srno, serial no, etc.)
   const isSrNoColumn = (header) => {
@@ -198,108 +223,216 @@ export default function ExcelMerger() {
   };
 
   // ✅ STEP 2 - Auto map similar headers with state management
-  const autoMapHeaders = () => {
-    if (files.length < 2) {
-      alert("Upload at least 2 files");
-      return;
-    }
+const autoMapHeaders = () => {
+  if (files.length < 2) {
+    alert("Upload at least 2 files");
+    return;
+  }
 
-    const mappings = {};
-    const headerGroups = {};
+  const mappings = {};
+  const headerGroups = {};
+  const pairsData = {}; // ✅ Track which headers merged to what
 
-    // group similar headers
-    files.forEach((file) => {
-      file.headers.forEach((header) => {
-        const standard = getStandardColumnName(header);
+  // ✅ Load saved manual mappings FIRST
+  const savedManual = loadSavedMappings();
+  console.log('📂 Loaded saved manual mappings:', savedManual);
 
-        if (!headerGroups[standard]) headerGroups[standard] = [];
-        headerGroups[standard].push({ fileId: file.id, header });
-      });
+  // group similar headers
+  files.forEach((file) => {
+    file.headers.forEach((header) => {
+      const standard = getStandardColumnName(header);
+
+      if (!headerGroups[standard]) headerGroups[standard] = [];
+      headerGroups[standard].push({ fileId: file.id, fileName: file.name, header });
     });
+  });
 
-    Object.keys(headerGroups).forEach((standard) => {
-      const group = headerGroups[standard];
+  Object.keys(headerGroups).forEach((standard) => {
+    const group = headerGroups[standard];
 
-      if (group.length > 1) {
-        group.forEach(({ fileId, header }) => {
-          const key = `${fileId}::${header}`;
+    if (group.length > 1) {
+      // ✅ Track merged pairs
+      if (!pairsData[standard]) {
+        pairsData[standard] = [];
+      }
+
+      group.forEach(({ fileId, fileName, header }) => {
+        const key = `${fileId}::${header}`;
+        
+        // ✅ Check if there's a saved manual mapping for this key
+        if (savedManual[key]) {
+          mappings[key] = savedManual[key];
+          console.log(`✅ Using saved manual mapping: ${key} → ${savedManual[key]}`);
+        } else {
           mappings[key] = standard;
+        }
+
+        // ✅ Track the pair
+        pairsData[standard].push({
+          key: key,
+          fileName: fileName,
+          originalHeader: header,
+          isManual: !!savedManual[key]
+        });
+      });
+    }
+  });
+
+  // ✅ ALSO apply manual mappings that don't fit into auto-groups
+  Object.keys(savedManual).forEach((key) => {
+    if (!mappings[key]) {
+      mappings[key] = savedManual[key];
+      console.log(`✅ Applying orphan manual mapping: ${key} → ${savedManual[key]}`);
+      
+      // Add to pairsData
+      const [fileId, header] = key.split('::');
+      const file = files.find(f => f.id === fileId);
+      const targetName = savedManual[key];
+      
+      if (file) {
+        if (!pairsData[targetName]) {
+          pairsData[targetName] = [];
+        }
+        
+        pairsData[targetName].push({
+          key: key,
+          fileName: file.name,
+          originalHeader: header,
+          isManual: true
         });
       }
-    });
-
-    setColumnMappings(mappings);
-
-    // ✅ STEP 2 - Set autoMapped state
-    const auto = {};
-    Object.keys(mappings).forEach(k => {
-      auto[k] = true;
-    });
-
-    setAutoMapped(auto);
-    setManualMapped({});
-  };
-
-  // ✅ Apply mappings from the advanced modal
-  const applyAdvancedMapping = (newMappings) => {
-    setColumnMappings(newMappings);
-    setShowColumnMapping(false);
-    
-    // Count how many columns were actually mapped
-    let changedCount = 0;
-    Object.keys(newMappings).forEach((key) => {
-      const originalHeader = key.split('::')[1];
-      if (newMappings[key] !== originalHeader) {
-        changedCount++;
-      }
-    });
-    
-    if (changedCount > 0) {
-      alert(`✓ Mapping applied! ${changedCount} column(s) will be renamed during merge.`);
     }
-  };
+  });
 
-  const handleFileUpload = (e) => {
-    const uploadedFiles = Array.from(e.target.files);
+  setColumnMappings(mappings);
+  setMergedPairsData(pairsData);
 
-    uploadedFiles.forEach((file) => {
-      const reader = new FileReader();
+  // Set autoMapped state (only for non-manual ones)
+  const auto = {};
+  Object.keys(mappings).forEach(k => {
+    if (!savedManual[k]) {
+      auto[k] = true;
+    }
+  });
 
-      reader.onload = (event) => {
-        const binaryString = event.target.result;
+  setAutoMapped(auto);
+  
+  console.log('✅ Auto mapping complete. Total mappings:', Object.keys(mappings).length);
+  console.log('Manual mappings preserved:', Object.keys(savedManual).length);
+};
+// ✅ NEW: Decombine/remove a specific mapping
+const decombineMapping = (mappingKey, mergedColumnName) => {
+  // Remove from columnMappings
+  const updatedMappings = { ...columnMappings };
+  delete updatedMappings[mappingKey];
+  setColumnMappings(updatedMappings);
 
-        const workbook = XLSX.read(binaryString, { type: "binary" });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
+  // Remove from autoMapped
+  const updatedAuto = { ...autoMapped };
+  delete updatedAuto[mappingKey];
+  setAutoMapped(updatedAuto);
 
-        const autoHeaderIndex = detectHeaderRowIndex(sheet);
+  // Remove from manualMapped and localStorage
+  const updatedManual = { ...manualMapped };
+  delete updatedManual[mappingKey];
+  setManualMapped(updatedManual);
+  saveMappingsToStorage(updatedManual);
 
-        const { data, headers, hyperlinks } = readExcelFileData(
+  // Update mergedPairsData
+  const updatedPairs = { ...mergedPairsData };
+  if (updatedPairs[mergedColumnName]) {
+    updatedPairs[mergedColumnName] = updatedPairs[mergedColumnName].filter(
+      pair => pair.key !== mappingKey
+    );
+    
+    // If no pairs left for this merged column, remove it
+    if (updatedPairs[mergedColumnName].length === 0) {
+      delete updatedPairs[mergedColumnName];
+    }
+  }
+  setMergedPairsData(updatedPairs);
+
+  alert('Mapping removed! Click "Merge Files" to see updated result.');
+};
+// ✅ Apply mappings from advanced modal
+const applyAdvancedMapping = (newMappings) => {
+  setColumnMappings(newMappings);
+  setShowColumnMapping(false);
+  
+  // ✅ Track manual mappings and save to localStorage
+  const manual = {};
+  Object.keys(newMappings).forEach((key) => {
+    const originalHeader = key.split('::')[1];
+    const standardName = getStandardColumnName(originalHeader);
+    
+    // If user changed it to something OTHER than the original or standard name, it's manual
+    if (newMappings[key] !== originalHeader && newMappings[key] !== standardName) {
+      manual[key] = newMappings[key];
+    }
+  });
+  
+  setManualMapped(manual);
+  saveMappingsToStorage(manual);
+  
+  // Count how many columns were actually mapped
+  let changedCount = 0;
+  Object.keys(newMappings).forEach((key) => {
+    const originalHeader = key.split('::')[1];
+    if (newMappings[key] !== originalHeader) {
+      changedCount++;
+    }
+  });
+  
+  if (changedCount > 0) {
+    alert(`✓ Mapping applied! ${changedCount} column(s) will be renamed during merge.`);
+  }
+};
+
+const handleFileUpload = (e) => {
+  const uploadedFiles = Array.from(e.target.files);
+
+  uploadedFiles.forEach((file) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      const binaryString = event.target.result;
+
+      const workbook = XLSX.read(binaryString, { type: "binary" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+
+      const autoHeaderIndex = detectHeaderRowIndex(sheet);
+
+      const { data, headers, hyperlinks } = readExcelFileData(
+        binaryString,
+        autoHeaderIndex
+      );
+
+      // ✅ Generate consistent ID based on file name only (no timestamp/random)
+      // This way same file will have same ID across sessions
+      const consistentId = `${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+      setFiles((prev) => [
+        ...prev,
+        {
+          id: consistentId,  // ✅ Changed from dynamic to consistent
+          name: file.name,
           binaryString,
-          autoHeaderIndex
-        );
+          data,
+          headers,
+          hyperlinks,
+          autoHeaderIndex,
+          mode: "auto",
+          manualHeaderIndex: autoHeaderIndex,
+        },
+      ]);
+    };
 
-        setFiles((prev) => [
-          ...prev,
-          {
-            id: `${file.name}_${Date.now()}_${Math.random()}`,
-            name: file.name,
-            binaryString,
-            data,
-            headers,
-            hyperlinks,
-            autoHeaderIndex,
-            mode: "auto",
-            manualHeaderIndex: autoHeaderIndex,
-          },
-        ]);
-      };
+    reader.readAsBinaryString(file);
+  });
 
-      reader.readAsBinaryString(file);
-    });
-
-    e.target.value = "";
-  };
+  e.target.value = "";
+};
 
   const updateFileHeaderMode = (fileId, mode) => {
     setFiles((prev) =>
@@ -889,22 +1022,26 @@ export default function ExcelMerger() {
         />
 
         <div className={styles.content}>
-          {activeTab === "upload" && (
-            <UploadSection
-              files={files}
-              onUpload={handleFileUpload}
-              clearFiles={clearFiles}
-              updateFileHeaderMode={updateFileHeaderMode}
-              updateManualHeaderIndex={updateManualHeaderIndex}
-              autoMapHeaders={autoMapHeaders}
-              mergeFiles={mergeFiles}
-              columnMappings={columnMappings}
-              setColumnMappings={setColumnMappings}
-              autoMapped={autoMapped}
-              manualMapped={manualMapped}
-              setManualMapped={setManualMapped}
-            />
-          )}
+{activeTab === "upload" && (
+  <UploadSection
+    files={files}
+    onUpload={handleFileUpload}
+    clearFiles={clearFiles}
+    updateFileHeaderMode={updateFileHeaderMode}
+    updateManualHeaderIndex={updateManualHeaderIndex}
+    autoMapHeaders={autoMapHeaders}
+    mergeFiles={mergeFiles}
+    columnMappings={columnMappings}
+    setColumnMappings={setColumnMappings}
+    autoMapped={autoMapped}
+    manualMapped={manualMapped}
+    setManualMapped={setManualMapped}
+    showMergedPairs={showMergedPairs}
+    setShowMergedPairs={setShowMergedPairs}
+    mergedPairsData={mergedPairsData}
+    decombineMapping={decombineMapping}
+  />
+)}
 
           {activeTab === "preview" && mergedData && (
             <PreviewSection

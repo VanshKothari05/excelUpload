@@ -16,47 +16,81 @@ export default function UploadSection({
   setColumnMappings,
   autoMapped,
   manualMapped,
-  setManualMapped
+  setManualMapped,
+  showMergedPairs,
+  setShowMergedPairs,
+  mergedPairsData,
+  decombineMapping
 }) {
   const [dragItem, setDragItem] = useState(null);
+const [dragOverTarget, setDragOverTarget] = useState(null); ///
+const onDragStart = (fileId, header) => {
+  setDragItem({ fileId, header });
+};
 
-  const onDragStart = (fileId, header) => {
-    setDragItem({ fileId, header });
+const onDragOverHeader = (fileId, header) => {
+  setDragOverTarget(`${fileId}::${header}`);
+};
+
+const onDragLeaveHeader = () => {
+  setDragOverTarget(null);
+};
+
+const onDrop = (targetFileId, targetHeader) => {
+  setDragOverTarget(null);
+
+  if (!dragItem) return;
+
+  const sourceKey = `${dragItem.fileId}::${dragItem.header}`;
+  const targetKey = `${targetFileId}::${targetHeader}`;
+
+  const option = prompt(
+    `Map "${dragItem.header}" with "${targetHeader}"\n\nType:\n1 → keep first name\n2 → keep second name\n3 → custom name`
+  );
+
+  let finalName = targetHeader;
+
+  if (option === "1") finalName = dragItem.header;
+  else if (option === "2") finalName = targetHeader;
+  else if (option === "3") {
+    const custom = prompt("Enter custom merged column name");
+    if (custom) finalName = custom;
+  }
+
+  setColumnMappings((prev) => ({
+    ...prev,
+    [sourceKey]: finalName,
+    [targetKey]: finalName,
+  }));
+
+  const updatedManual = {
+    ...manualMapped,
+    [sourceKey]: finalName,
+    [targetKey]: finalName
   };
 
-  const onDrop = (targetFileId, targetHeader) => {
-    if (!dragItem) return;
+  setManualMapped(updatedManual);
 
-    const sourceKey = `${dragItem.fileId}::${dragItem.header}`;
-    const targetKey = `${targetFileId}::${targetHeader}`;
+  try {
+    localStorage.setItem('manualColumnMappings', JSON.stringify(updatedManual));
+  } catch (error) {
+    console.error('Failed to save manual mapping:', error);
+  }
 
-    const option = prompt(
-      `Map "${dragItem.header}" with "${targetHeader}"\n\nType:\n1 → keep first name\n2 → keep second name\n3 → custom name`
-    );
+  setDragItem(null);
+}; ///
 
-    let finalName = targetHeader;
 
-    if (option === "1") finalName = dragItem.header;
-    else if (option === "2") finalName = targetHeader;
-    else if (option === "3") {
-      const custom = prompt("Enter custom merged column name");
-      if (custom) finalName = custom;
-    }
+  // ✅ NEW: Remove entire merged group
+  const removeEntireGroup = (mergedColumnName) => {
+    if (!confirm(`Remove all mappings for "${mergedColumnName}"?`)) return;
 
-    setColumnMappings((prev) => ({
-      ...prev,
-      [sourceKey]: finalName,
-      [targetKey]: finalName,
-    }));
-
-    // ✅ STEP 5 - Mark as manually mapped
-    setManualMapped(prev => ({
-      ...prev,
-      [sourceKey]: true,
-      [targetKey]: true
-    }));
-
-    setDragItem(null);
+    const pairsToRemove = mergedPairsData[mergedColumnName];
+    
+    // Remove all mappings in this group
+    pairsToRemove.forEach(pair => {
+      decombineMapping(pair.key, mergedColumnName);
+    });
   };
 
   return (
@@ -92,15 +126,28 @@ export default function UploadSection({
             Drag & drop columns to merge manually
           </div>
 
-          <div className={styles.legend}>
-            <div className={styles.legendItem}>
-              <span className={`${styles.dot} ${styles.auto}`}></span>
-              Auto mapped
+          {/* ✅ CHANGE 1: Legend + Show Merged Pairs button side by side */}
+          <div className={styles.legendRow}>
+            <div className={styles.legend}>
+              <div className={styles.legendItem}>
+                <span className={`${styles.dot} ${styles.auto}`}></span>
+                Auto mapped
+              </div>
+              <div className={styles.legendItem}>
+                <span className={`${styles.dot} ${styles.manual}`}></span>
+                Manual mapped
+              </div>
             </div>
-            <div className={styles.legendItem}>
-              <span className={`${styles.dot} ${styles.manual}`}></span>
-              Manual mapped
-            </div>
+
+            {/* ✅ Show Merged Pairs button next to legend */}
+            {Object.keys(mergedPairsData).length > 0 && (
+              <button 
+                onClick={() => setShowMergedPairs(!showMergedPairs)} 
+                className={styles.showPairsBtnCompact}
+              >
+                {showMergedPairs ? '▼' : '▶'} View Pairs ({Object.keys(mergedPairsData).length})
+              </button>
+            )}
           </div>
 
           <div className={styles.filesList}>
@@ -115,24 +162,36 @@ export default function UploadSection({
                     const key = `${file.id}::${header}`;
                     const mapped = columnMappings?.[key];
                     
-                    // ✅ STEP 6 - Color highlight logic
                     let highlight = "";
 
                     if (autoMapped[key]) highlight = styles.auto;
                     if (manualMapped[key]) highlight = styles.manual;
 
                     return (
-                      <div
-                        key={header}
-                        draggable
-                        onDragStart={() => onDragStart(file.id, header)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => onDrop(file.id, header)}
-                        className={`${styles.headerTag} ${highlight}`}
-                        title="Drag to merge with another column"
-                      >
-                        {header}
-                      </div>
+<div
+  key={header}
+  draggable
+  onDragStart={() => onDragStart(file.id, header)}
+  onDragOver={(e) => {
+    e.preventDefault();
+    onDragOverHeader(file.id, header);
+  }}
+  onDragLeave={onDragLeaveHeader}
+  onDrop={() => onDrop(file.id, header)}
+  className={`
+    ${styles.headerTag} 
+    ${highlight}
+    ${dragOverTarget === `${file.id}::${header}` ? styles.dragTarget : ""}
+  `}
+>
+  {header}
+
+  {/* ⭐ Arrow indicator */}
+  {dragOverTarget === `${file.id}::${header}` && dragItem && (
+    <span className={styles.dropArrow}>⬇ Drop Here</span>
+  )}
+</div>
+
                     );
                   })}
                 </div>
@@ -149,6 +208,43 @@ export default function UploadSection({
               Merge Files
             </button>
           </div>
+
+          {/* ✅ CHANGE 2: Merged Pairs with ONE cross per group */}
+          {showMergedPairs && Object.keys(mergedPairsData).length > 0 && (
+            <div className={styles.mergedPairsSection}>
+              <div className={styles.mergedPairsList}>
+                {Object.keys(mergedPairsData).map((mergedColumn) => (
+                  <div key={mergedColumn} className={styles.pairGroup}>
+                    <div className={styles.pairGroupHeader}>
+                      <strong>→ {mergedColumn}</strong>
+                      {/* ✅ ONE cross button for entire group */}
+                      <button
+                        onClick={() => removeEntireGroup(mergedColumn)}
+                        className={styles.removeGroupBtn}
+                        title="Remove entire merged group"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className={styles.pairItems}>
+                      {mergedPairsData[mergedColumn].map((pair, idx) => (
+                        <div key={idx} className={styles.pairItem}>
+                          <div className={styles.pairInfo}>
+                            <span className={styles.pairFileName}>{pair.fileName}</span>
+                            <span className={styles.pairArrow}>→</span>
+                            <span className={styles.pairOriginal}>{pair.originalHeader}</span>
+                            {pair.isManual && (
+                              <span className={styles.manualBadge}>Manual</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
