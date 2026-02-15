@@ -1,6 +1,3 @@
-// ============================
-// UploadSection.jsx (FULL REPLACEMENT)
-// ============================
 import styles from "./uploadSection.module.css";
 import { useState } from "react";
 
@@ -8,8 +5,7 @@ export default function UploadSection({
   files,
   onUpload,
   clearFiles,
-  updateFileHeaderMode,
-  updateManualHeaderIndex,
+  removeFile,
   autoMapHeaders,
   mergeFiles,
   columnMappings,
@@ -80,19 +76,6 @@ const onDrop = (targetFileId, targetHeader) => {
   setDragItem(null);
 }; ///
 
-
-  // ✅ NEW: Remove entire merged group
-  const removeEntireGroup = (mergedColumnName) => {
-    if (!confirm(`Remove all mappings for "${mergedColumnName}"?`)) return;
-
-    const pairsToRemove = mergedPairsData[mergedColumnName];
-    
-    // Remove all mappings in this group
-    pairsToRemove.forEach(pair => {
-      decombineMapping(pair.key, mergedColumnName);
-    });
-  };
-
   return (
     <div className={styles.uploadSection}>
       <div className={styles.uploadArea}>
@@ -121,12 +104,29 @@ const onDrop = (targetFileId, targetHeader) => {
               Clear All
             </button>
           </div>
+
+          {/* ✅ NEW: Show uploaded file names with individual remove buttons */}
+          <div className={styles.uploadedFilesList}>
+            {files.map((file, idx) => (
+              <div key={file.id} className={styles.uploadedFileItem}>
+                <span className={styles.fileIcon}>📄</span>
+                <span className={styles.fileNameText}>{file.name}</span>
+                <button
+                  onClick={() => removeFile(file.id)}
+                  className={styles.removeFileBtn}
+                  title="Remove this file"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
           
           <div style={{marginBottom:"8px",fontSize:"13px"}}>
             Drag & drop columns to merge manually
           </div>
 
-          {/* ✅ CHANGE 1: Legend + Show Merged Pairs button side by side */}
+          {/*  Legend + Show Merged Pairs button side by side */}
           <div className={styles.legendRow}>
             <div className={styles.legend}>
               <div className={styles.legendItem}>
@@ -139,7 +139,7 @@ const onDrop = (targetFileId, targetHeader) => {
               </div>
             </div>
 
-            {/* ✅ Show Merged Pairs button next to legend */}
+            {/* Show Merged Pairs button next to legend */}
             {Object.keys(mergedPairsData).length > 0 && (
               <button 
                 onClick={() => setShowMergedPairs(!showMergedPairs)} 
@@ -186,7 +186,7 @@ const onDrop = (targetFileId, targetHeader) => {
 >
   {header}
 
-  {/* ⭐ Arrow indicator */}
+  {/*  Arrow indicator */}
   {dragOverTarget === `${file.id}::${header}` && dragItem && (
     <span className={styles.dropArrow}>⬇ Drop Here</span>
   )}
@@ -209,7 +209,7 @@ const onDrop = (targetFileId, targetHeader) => {
             </button>
           </div>
 
-          {/* ✅ CHANGE 2: Merged Pairs with ONE cross per group */}
+          {/*  Merged Pairs with ONE cross per group */}
           {showMergedPairs && Object.keys(mergedPairsData).length > 0 && (
             <div className={styles.mergedPairsSection}>
               <div className={styles.mergedPairsList}>
@@ -217,9 +217,9 @@ const onDrop = (targetFileId, targetHeader) => {
                   <div key={mergedColumn} className={styles.pairGroup}>
                     <div className={styles.pairGroupHeader}>
                       <strong>→ {mergedColumn}</strong>
-                      {/* ✅ ONE cross button for entire group */}
+                      {/* ✅ FIXED: Call decombineMapping directly with only mergedColumn */}
                       <button
-                        onClick={() => removeEntireGroup(mergedColumn)}
+                        onClick={() => decombineMapping(mergedColumn)}
                         className={styles.removeGroupBtn}
                         title="Remove entire merged group"
                       >

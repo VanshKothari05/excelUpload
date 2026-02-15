@@ -7,8 +7,7 @@ import Header from "./Header";
 import Tabs from "./Tabs";
 import UploadSection from "./UploadSection";
 import PreviewSection from "./PreviewSection";
-import DatabaseSection from "./DatabaseSection";
-import ColumnMappingModal from "./ColumnMappingModal";
+
 
 import styles from "./excelMerger.module.css";
 
@@ -19,41 +18,26 @@ import {
 } from "@/app/lib/excelUtils";
 
 export default function ExcelMerger() {
-  // ✅ STEP 1 - Add autoMapped and manualMapped states
+  // Add autoMapped and manualMapped states
   const [autoMapped, setAutoMapped] = useState({});
   const [manualMapped, setManualMapped] = useState({});
   const [showMergedPairs, setShowMergedPairs] = useState(false);
 const [mergedPairsData, setMergedPairsData] = useState({});
+const [columnMappings, setColumnMappings] = useState({});
 
   const [files, setFiles] = useState([]);
   const [mergedData, setMergedData] = useState(null);
-  const [savedRecords, setSavedRecords] = useState([]);
   const [activeTab, setActiveTab] = useState("upload");
   const [loading, setLoading] = useState(false);
 
-  const [showColumnMapping, setShowColumnMapping] = useState(false);
-  const [columnMappings, setColumnMappings] = useState({});
+
 
   const [hiddenColumns, setHiddenColumns] = useState(new Set());
 
   const [numericColumn, setNumericColumn] = useState("");
   const [numericDelta, setNumericDelta] = useState(0);
 
-  useEffect(() => {
-    fetchRecords();
-  }, []);
-
-  const fetchRecords = async () => {
-    try {
-      const res = await fetch("/api/excel");
-      const data = await res.json();
-      if (data.success) setSavedRecords(data.records);
-    } catch (error) {
-      console.error("Failed to fetch records:", error);
-    }
-  };
-
-  // ✅ Normalize header names for auto mapping
+  // Normalize header names for auto mapping
   const normalizeHeader = (str) => {
     return String(str || "")
       .toLowerCase()
@@ -93,7 +77,7 @@ const saveMappingsToStorage = (mappings) => {
   }
 };
 
-  // ✅ Detect Sr No column key (works for sr no, srno, serial no, etc.)
+  // Detect Sr No column key 
   const isSrNoColumn = (header) => {
     const h = normalizeHeader(header);
     return (
@@ -107,16 +91,15 @@ const saveMappingsToStorage = (mappings) => {
     );
   };
 
-  // ✅ Diamond industry column synonyms mapping
+  // Diamond industry column synonyms mapping
   const getStandardColumnName = (header) => {
-    // ✅ CRITICAL: Check Sr No BEFORE normalizing
+    
     if (isSrNoColumn(header)) {
       return "Sr No";
     }
     
     const normalized = normalizeHeader(header);
-    
-    // Define synonym groups with standard name (LHS) and all variations (RHS)
+    // Synonym Table
     const synonymGroups = {
       "Weight": ["weight", "carats", "cts", "ct", "carat"],
       "Color": ["color", "col", "colour"],
@@ -203,7 +186,7 @@ const saveMappingsToStorage = (mappings) => {
       }
     }
 
-    // ✅ FIX: If no match found, return original header
+    // If no match found, return original header
     return header;
   };
 
@@ -217,12 +200,9 @@ const saveMappingsToStorage = (mappings) => {
     return allHeaders;
   };
 
-  // ✅ Open advanced mapping modal
-  const openAdvancedMapping = () => {
-    setShowColumnMapping(true);
-  };
 
-  // ✅ STEP 2 - Auto map similar headers with state management
+
+  // Auto map similar headers 
 const autoMapHeaders = () => {
   if (files.length < 2) {
     alert("Upload at least 2 files");
@@ -231,9 +211,9 @@ const autoMapHeaders = () => {
 
   const mappings = {};
   const headerGroups = {};
-  const pairsData = {}; // ✅ Track which headers merged to what
+  const pairsData = {}; 
 
-  // ✅ Load saved manual mappings FIRST
+  //  Load saved manual mappings first
   const savedManual = loadSavedMappings();
   console.log('📂 Loaded saved manual mappings:', savedManual);
 
@@ -251,7 +231,7 @@ const autoMapHeaders = () => {
     const group = headerGroups[standard];
 
     if (group.length > 1) {
-      // ✅ Track merged pairs
+      // Track merged pairs
       if (!pairsData[standard]) {
         pairsData[standard] = [];
       }
@@ -259,7 +239,7 @@ const autoMapHeaders = () => {
       group.forEach(({ fileId, fileName, header }) => {
         const key = `${fileId}::${header}`;
         
-        // ✅ Check if there's a saved manual mapping for this key
+        //  Check if there's a saved manual mapping for this key
         if (savedManual[key]) {
           mappings[key] = savedManual[key];
           console.log(`✅ Using saved manual mapping: ${key} → ${savedManual[key]}`);
@@ -267,7 +247,7 @@ const autoMapHeaders = () => {
           mappings[key] = standard;
         }
 
-        // ✅ Track the pair
+        //  Track the pair
         pairsData[standard].push({
           key: key,
           fileName: fileName,
@@ -278,7 +258,7 @@ const autoMapHeaders = () => {
     }
   });
 
-  // ✅ ALSO apply manual mappings that don't fit into auto-groups
+  //  ALSO apply manual mappings that don't fit into auto-groups
   Object.keys(savedManual).forEach((key) => {
     if (!mappings[key]) {
       mappings[key] = savedManual[key];
@@ -315,78 +295,103 @@ const autoMapHeaders = () => {
     }
   });
 
+  // ✅ AUTO-MARK Height, Meas MM, and Measurement as auto-mapped (green)
+  // These are internally combined in mergeFiles function: L*W*H → Measurement
+  files.forEach((file) => {
+    file.headers.forEach((header) => {
+      const lower = normalizeHeader(header);
+      const key = `${file.id}::${header}`;
+      
+      // Mark Height columns (used in L*W*H combination)
+      if (lower.includes("height") || lower === "height") {
+        auto[key] = true;
+      }
+      
+      // Mark Meas MM columns (contains L*W dimensions)
+      if ((lower.includes("meas") && lower.includes("mm")) || 
+          lower === "meas mm" ||
+          lower.includes("measmm")) {
+        auto[key] = true;
+      }
+      
+      // Mark Measurement columns (the combined result L*W*H)
+      if (lower === "measurement" || 
+          lower === "meas" || 
+          lower === "measm" ||
+          lower === "measurment") {
+        auto[key] = true;
+      }
+    });
+  });
+
   setAutoMapped(auto);
   
   console.log('✅ Auto mapping complete. Total mappings:', Object.keys(mappings).length);
   console.log('Manual mappings preserved:', Object.keys(savedManual).length);
+  console.log('✅ Height/Meas MM/Measurement marked as auto-mapped (green)');
 };
-// ✅ NEW: Decombine/remove a specific mapping
-const decombineMapping = (mappingKey, mergedColumnName) => {
-  // Remove from columnMappings
+//  Decombine/remove entire mapping pair
+const decombineMapping = (mergedColumnName) => {
+  console.log('=== DECOMBINE MAPPING CALLED ===');
+  console.log('mergedColumnName:', mergedColumnName);
+  console.log('mergedPairsData:', mergedPairsData);
+  console.log('columnMappings:', columnMappings);
+  
+  // Get the pairs for this merged column
+  const pairs = mergedPairsData[mergedColumnName];
+  
+  console.log('pairs found:', pairs);
+  
+  if (!pairs || pairs.length === 0) {
+    console.error('No pairs found for:', mergedColumnName);
+    console.error('Available keys in mergedPairsData:', Object.keys(mergedPairsData));
+    alert('No mappings found to remove. Check console for debug info.');
+    return;
+  }
+
+  // Show confirmation dialog
+  const pairCount = pairs.length;
+  if (!confirm(`Are you sure you want to remove all ${pairCount} column(s) mapped to "${mergedColumnName}"?`)) {
+    return;
+  }
+
+  // Get all mapping keys from the pairs
+  const keysToRemove = pairs.map(pair => pair.key);
+  
+  console.log('Keys to remove:', keysToRemove);
+
+  // Remove all mappings for this merged column
   const updatedMappings = { ...columnMappings };
-  delete updatedMappings[mappingKey];
-  setColumnMappings(updatedMappings);
-
-  // Remove from autoMapped
   const updatedAuto = { ...autoMapped };
-  delete updatedAuto[mappingKey];
-  setAutoMapped(updatedAuto);
-
-  // Remove from manualMapped and localStorage
   const updatedManual = { ...manualMapped };
-  delete updatedManual[mappingKey];
+
+  keysToRemove.forEach(key => {
+    console.log(`Deleting key: ${key}`);
+    delete updatedMappings[key];
+    delete updatedAuto[key];
+    delete updatedManual[key];
+  });
+
+  setColumnMappings(updatedMappings);
+  setAutoMapped(updatedAuto);
   setManualMapped(updatedManual);
   saveMappingsToStorage(updatedManual);
 
-  // Update mergedPairsData
+  // Remove from mergedPairsData
   const updatedPairs = { ...mergedPairsData };
-  if (updatedPairs[mergedColumnName]) {
-    updatedPairs[mergedColumnName] = updatedPairs[mergedColumnName].filter(
-      pair => pair.key !== mappingKey
-    );
-    
-    // If no pairs left for this merged column, remove it
-    if (updatedPairs[mergedColumnName].length === 0) {
-      delete updatedPairs[mergedColumnName];
-    }
-  }
+  delete updatedPairs[mergedColumnName];
   setMergedPairsData(updatedPairs);
 
-  alert('Mapping removed! Click "Merge Files" to see updated result.');
+  console.log('✅ Updated mappings:', updatedMappings);
+  console.log('✅ Updated pairs:', updatedPairs);
+
+  alert(`✅ Mapping removed successfully! Click "Merge Files" to see updated result.`);
 };
-// ✅ Apply mappings from advanced modal
-const applyAdvancedMapping = (newMappings) => {
-  setColumnMappings(newMappings);
-  setShowColumnMapping(false);
+//  Apply mappings from advanced modal
+
   
-  // ✅ Track manual mappings and save to localStorage
-  const manual = {};
-  Object.keys(newMappings).forEach((key) => {
-    const originalHeader = key.split('::')[1];
-    const standardName = getStandardColumnName(originalHeader);
-    
-    // If user changed it to something OTHER than the original or standard name, it's manual
-    if (newMappings[key] !== originalHeader && newMappings[key] !== standardName) {
-      manual[key] = newMappings[key];
-    }
-  });
-  
-  setManualMapped(manual);
-  saveMappingsToStorage(manual);
-  
-  // Count how many columns were actually mapped
-  let changedCount = 0;
-  Object.keys(newMappings).forEach((key) => {
-    const originalHeader = key.split('::')[1];
-    if (newMappings[key] !== originalHeader) {
-      changedCount++;
-    }
-  });
-  
-  if (changedCount > 0) {
-    alert(`✓ Mapping applied! ${changedCount} column(s) will be renamed during merge.`);
-  }
-};
+  //  Track manual mappings and save to localStorage
+
 
 const handleFileUpload = (e) => {
   const uploadedFiles = Array.from(e.target.files);
@@ -408,22 +413,20 @@ const handleFileUpload = (e) => {
         autoHeaderIndex
       );
 
-      // ✅ Generate consistent ID based on file name only (no timestamp/random)
+      //  Generate consistent ID based on file name only (no timestamp/random)
       // This way same file will have same ID across sessions
       const consistentId = `${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
       setFiles((prev) => [
         ...prev,
         {
-          id: consistentId,  // ✅ Changed from dynamic to consistent
+          id: consistentId,
           name: file.name,
           binaryString,
           data,
           headers,
           hyperlinks,
           autoHeaderIndex,
-          mode: "auto",
-          manualHeaderIndex: autoHeaderIndex,
         },
       ]);
     };
@@ -434,67 +437,57 @@ const handleFileUpload = (e) => {
   e.target.value = "";
 };
 
-  const updateFileHeaderMode = (fileId, mode) => {
-    setFiles((prev) =>
-      prev.map((f) => {
-        if (f.id !== fileId) return f;
-
-        let headerIndex = f.autoHeaderIndex;
-
-        if (mode === "manual") {
-          headerIndex = Number(f.manualHeaderIndex);
-          if (isNaN(headerIndex) || headerIndex < 0) headerIndex = 0;
-        }
-
-        const { data, headers, hyperlinks } = readExcelFileData(
-          f.binaryString,
-          headerIndex
-        );
-
-        return { ...f, mode, data, headers, hyperlinks };
-      })
-    );
-
-    setShowColumnMapping(false);
-    setColumnMappings({});
+  const removeFile = (fileId) => {
+    setFiles((prev) => prev.filter(f => f.id !== fileId));
+    
+    // Clean up mappings related to this file
+    const updatedMappings = { ...columnMappings };
+    const updatedAuto = { ...autoMapped };
+    const updatedManual = { ...manualMapped };
+    const updatedPairs = { ...mergedPairsData };
+    
+    // Remove all mappings that start with this fileId
+    Object.keys(updatedMappings).forEach(key => {
+      if (key.startsWith(`${fileId}::`)) {
+        delete updatedMappings[key];
+        delete updatedAuto[key];
+        delete updatedManual[key];
+      }
+    });
+    
+    // Remove from merged pairs
+    Object.keys(updatedPairs).forEach(mergedColumn => {
+      updatedPairs[mergedColumn] = updatedPairs[mergedColumn].filter(
+        pair => !pair.key.startsWith(`${fileId}::`)
+      );
+      // If no pairs left for this merged column, remove it
+      if (updatedPairs[mergedColumn].length === 0) {
+        delete updatedPairs[mergedColumn];
+      }
+    });
+    
+    setColumnMappings(updatedMappings);
+    setAutoMapped(updatedAuto);
+    setManualMapped(updatedManual);
+    setMergedPairsData(updatedPairs);
+    saveMappingsToStorage(updatedManual);
+    
+    // If no files left, clear everything
+    if (files.length === 1) {
+      setMergedData(null);
+      setColumnMappings({});
+      setShowMergedPairs(false);
+      setMergedPairsData({});
+      setAutoMapped({});
+      setManualMapped({});
+      setHiddenColumns(new Set());
+      setNumericColumn("");
+      setNumericDelta(0);
+      localStorage.removeItem('manualColumnMappings');
+    }
   };
 
-  const updateManualHeaderIndex = (fileId, newManualIndex) => {
-    setFiles((prev) =>
-      prev.map((f) => {
-        if (f.id !== fileId) return f;
-
-        const manualHeaderIndex = Number(newManualIndex);
-
-        if (f.mode === "manual") {
-          const safeIndex =
-            isNaN(manualHeaderIndex) || manualHeaderIndex < 0
-              ? 0
-              : manualHeaderIndex;
-
-          const { data, headers, hyperlinks } = readExcelFileData(
-            f.binaryString,
-            safeIndex
-          );
-
-          return {
-            ...f,
-            manualHeaderIndex,
-            data,
-            headers,
-            hyperlinks,
-          };
-        }
-
-        return { ...f, manualHeaderIndex };
-      })
-    );
-
-    setShowColumnMapping(false);
-    setColumnMappings({});
-  };
-
-  // ✅ Helper to detect if a row is a summary row (Total/Average) or footer/disclaimer
+  //  Helper to detect if a row is a summary row 
   const isSummaryRow = (row) => {
     if (!row) return false;
     
@@ -563,7 +556,7 @@ const handleFileUpload = (e) => {
 
     let finalMappings = columnMappings;
 
-    // ✅ ALWAYS create complete mapping for ALL columns from ALL files
+    //  create complete mapping for all columns from all files
     const completeMappings = {};
     files.forEach((file) => {
       file.headers.forEach((header) => {
@@ -584,7 +577,7 @@ const handleFileUpload = (e) => {
 
     finalMappings = completeMappings;
 
-    // ✅ Extract dimension mappings and regular mappings
+    // Extract dimension mappings and regular mappings
     const dimensionMappings = {};
     const regularMappings = {};
    
@@ -645,19 +638,19 @@ const handleFileUpload = (e) => {
       console.log(`\n=== Processing File: ${file.name} ===`);
       
       file.data.forEach((row, rIdx) => {
-        // ✅ Skip Total, Average, and other summary rows
+        // Skip Total, Average, and other summary rows
         if (isSummaryRow(row)) {
           return;
         }
 
         const mappedRow = {};
 
-        // ✅ Initialize all mapped headers with empty strings
+        // Initialize all mapped headers with empty strings
         Array.from(mappedHeaders).forEach((h) => {
           mappedRow[h] = "";
         });
 
-        // ✅ Handle dimension columns
+        // Handle dimension columns
         Object.keys(dimensionMappings).forEach((dimName) => {
           const dimCols = dimensionMappings[dimName];
           const values = [];
@@ -686,7 +679,7 @@ const handleFileUpload = (e) => {
           }
         });
 
-        // ⭐ FINAL: BUILD L*W*H INTO MEASUREMENT COLUMN
+        //  BUILD L*W*H INTO MEASUREMENT COLUMN
         let heightVal = "";
         let lwVal = "";
 
@@ -713,7 +706,7 @@ const handleFileUpload = (e) => {
           });
         }
 
-        // ✅ Handle regular columns
+        // Handle regular columns
         Object.keys(row).forEach((originalColumn) => {
           const mappingKey = `${file.id}::${originalColumn}`;
           
@@ -745,7 +738,7 @@ const handleFileUpload = (e) => {
           }
         });
 
-        // ✅ Handle hyperlinks
+        //  Handle hyperlinks
         const linkRow = file.hyperlinks?.[rIdx] || {};
         const mappedLinkRow = {};
 
@@ -763,7 +756,7 @@ const handleFileUpload = (e) => {
       });
     });
 
-    // ✅ Sr No continuous numbering after merge
+    //  Sr No continuous numbering after merge
     const srNoHeader = Array.from(mappedHeaders).find((h) => isSrNoColumn(h));
     console.log("=== SR NO HEADER FOUND ===", srNoHeader);
     
@@ -778,13 +771,13 @@ const handleFileUpload = (e) => {
     console.log("=== FINAL MERGED DATA HEADERS ===");
     console.log(Array.from(mappedHeaders));
 
-    // ⭐ AUTO HIDE only Meas MM and Height columns (since they're merged into Measurement)
+    //  AUTO HIDE only Meas MM and Height columns 
     const autoHide = new Set(hiddenColumns);
 
     Array.from(mappedHeaders).forEach((h) => {
       const lower = h.toLowerCase();
 
-      // Only hide Meas MM and Height - they're merged into Measurement column
+      // Only hide Meas MM and Height 
       if (
         (lower.includes("meas") && lower.includes("mm")) ||
         lower === "height"
@@ -892,56 +885,8 @@ const handleFileUpload = (e) => {
     };
   };
 
-  const saveToDatabase = async () => {
-    if (!mergedData) return alert("No merged data to save");
 
-    const finalData = getFinalMergedData(mergedData);
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/excel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: finalData, fileCount: files.length }),
-      });
-
-      const result = await res.json();
-
-      if (result.success) {
-        alert("Data saved successfully!");
-        await fetchRecords();
-        setActiveTab("database");
-      } else {
-        alert("Failed to save data");
-      }
-    } catch (error) {
-      console.error("Save error:", error);
-      alert("Failed to save data");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const deleteRecordFromDB = async (id) => {
-    if (!confirm("Are you sure you want to delete this record?")) return;
-
-    try {
-      const res = await fetch(`/api/excel/${id}`, { method: "DELETE" });
-      const result = await res.json();
-
-      if (result.success) {
-        await fetchRecords();
-        alert("Record deleted successfully");
-      } else {
-        alert("Failed to delete record");
-      }
-    } catch (error) {
-      console.error("Delete error:", error);
-      alert("Failed to delete record");
-    }
-  };
-
-  // ✅ Export with hyperlinks styled BLUE + UNDERLINE
+  //  Export with hyperlinks styling
   const exportToExcel = (data = mergedData) => {
     if (!data) {
       alert("No data to export");
@@ -979,7 +924,7 @@ const handleFileUpload = (e) => {
             ws[cellAddress].l = { Target: link };
             ws[cellAddress].t = "s";
 
-            // ✅ Style (blue + underline)
+            //  Style (blue + underline)
             ws[cellAddress].s = {
               font: {
                 color: { rgb: "0000FF" },
@@ -1018,7 +963,6 @@ const handleFileUpload = (e) => {
         <Tabs
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          savedCount={savedRecords.length}
         />
 
         <div className={styles.content}>
@@ -1027,8 +971,7 @@ const handleFileUpload = (e) => {
     files={files}
     onUpload={handleFileUpload}
     clearFiles={clearFiles}
-    updateFileHeaderMode={updateFileHeaderMode}
-    updateManualHeaderIndex={updateManualHeaderIndex}
+    removeFile={removeFile}
     autoMapHeaders={autoMapHeaders}
     mergeFiles={mergeFiles}
     columnMappings={columnMappings}
@@ -1055,31 +998,13 @@ const handleFileUpload = (e) => {
               numericDelta={numericDelta}
               setNumericDelta={setNumericDelta}
               applyNumericDelta={applyNumericDelta}
-              saveToDatabase={saveToDatabase}
               exportToExcel={exportToExcel}
               loading={loading}
             />
           )}
-
-          {activeTab === "database" && (
-            <DatabaseSection
-              savedRecords={savedRecords}
-              exportToExcel={exportToExcel}
-              deleteRecordFromDB={deleteRecordFromDB}
-            />
-          )}
         </div>
       </div>
-
-      {/* ✅ Advanced Column Mapping Modal */}
-      {showColumnMapping && (
-        <ColumnMappingModal
-          files={files}
-          columnMappings={columnMappings}
-          onApply={applyAdvancedMapping}
-          onCancel={() => setShowColumnMapping(false)}
-        />
-      )}
     </div>
   );
 }
+

@@ -13,11 +13,11 @@ export default function PreviewSection({
   numericDelta,
   setNumericDelta,
   applyNumericDelta,
-  saveToDatabase,
   exportToExcel,
   loading,
 }) {
   const [showSpecificColumnsOnly, setShowSpecificColumnsOnly] = useState(false);
+  const [originalHiddenColumns, setOriginalHiddenColumns] = useState(new Set());
 
   const specificColumns = [
     "Sr No",
@@ -34,37 +34,72 @@ export default function PreviewSection({
     "Table",
     "Ratio",
     "Key To Symbols",
-    "H&A",
     "Add Comments",
     "Luster"
   ];
 
   const toggleSpecificColumns = () => {
-    setShowSpecificColumnsOnly(!showSpecificColumnsOnly);
+    const newMode = !showSpecificColumnsOnly;
+    setShowSpecificColumnsOnly(newMode);
+    
+    if (newMode) {
+      // Entering "Key Columns Only" mode
+      // Save the current hidden columns state
+      setOriginalHiddenColumns(new Set(hiddenColumns));
+      
+      // Hide all non-key columns
+      mergedData.headers.forEach((header) => {
+        const isKeyColumn = specificColumns.includes(header);
+        const isCurrentlyHidden = hiddenColumns.has(header);
+        
+        if (!isKeyColumn && !isCurrentlyHidden) {
+          // Hide non-key columns
+          toggleColumn(header);
+        }
+      });
+    } else {
+      // Exiting "Key Columns Only" mode - restore original state
+      mergedData.headers.forEach((header) => {
+        const isCurrentlyHidden = hiddenColumns.has(header);
+        const shouldBeHidden = originalHiddenColumns.has(header);
+        
+        // If current state doesn't match original state, toggle it
+        if (isCurrentlyHidden !== shouldBeHidden) {
+          toggleColumn(header);
+        }
+      });
+    }
   };
 
-  const displayHeaders = showSpecificColumnsOnly
-    ? specificColumns.filter(col => visibleHeaders.includes(col))
-    : visibleHeaders;
+  const displayHeaders = visibleHeaders;
 
   const handleColumnToggle = (header) => {
-    if (showSpecificColumnsOnly) {
-      return;
-    }
     toggleColumn(header);
   };
 
   const getColumnButtonStyle = (header) => {
+    const isHidden = hiddenColumns.has(header);
+    const isKeyColumn = specificColumns.includes(header);
+    
     if (showSpecificColumnsOnly) {
-      const isKeyColumn = specificColumns.includes(header);
-      return {
-        background: isKeyColumn ? "#c6f6d5" : "#fed7d7",
-        cursor: "not-allowed",
-        opacity: 0.8
-      };
+      // In key columns mode, add visual distinction
+      if (isKeyColumn) {
+        return {
+          background: isHidden ? "#fed7d7" : "#c6f6d5",
+          cursor: "pointer",
+          border: "2px solid #38a169",
+          fontWeight: "600"
+        };
+      } else {
+        return {
+          background: isHidden ? "#fed7d7" : "#bee3f8",
+          cursor: "pointer",
+          opacity: isHidden ? 0.7 : 1
+        };
+      }
     } else {
       return {
-        background: hiddenColumns.has(header) ? "#fed7d7" : "#c6f6d5",
+        background: isHidden ? "#fed7d7" : "#c6f6d5",
         cursor: "pointer"
       };
     }
@@ -78,14 +113,7 @@ export default function PreviewSection({
         </h3>
 
         <div className={styles.previewButtons}>
-          <button
-            className={`${styles.button} ${styles.success}`}
-            onClick={saveToDatabase}
-            disabled={loading}
-          >
-            <Database size={18} />
-            {loading ? "Saving..." : "Save to MongoDB"}
-          </button>
+
 
           <button className={styles.button} onClick={() => exportToExcel()}>
             <Download size={18} />
@@ -123,7 +151,9 @@ export default function PreviewSection({
             fontSize: "14px"
           }}>
             <p style={{ margin: 0, color: "#4a5568" }}>
-              <strong>Key Columns Mode:</strong> Showing only the 17 key columns (green). Column toggles are disabled in this mode.
+              <strong>Key Columns Mode:</strong> The 17 key columns are shown with green borders and are visible by default. 
+              Other columns are hidden (red) but you can click any to make them visible (green) in the table. 
+              Clicking "Show All Columns" will restore your original column settings.
             </p>
           </div>
         )}
@@ -131,6 +161,7 @@ export default function PreviewSection({
         <div className={styles.columnButtons}>
           {mergedData.headers.map((h) => {
             const isKeyColumn = specificColumns.includes(h);
+            const isHidden = hiddenColumns.has(h);
             const buttonStyle = getColumnButtonStyle(h);
             
             return (
@@ -139,12 +170,8 @@ export default function PreviewSection({
                 onClick={() => handleColumnToggle(h)}
                 className={styles.colToggle}
                 style={buttonStyle}
-                disabled={showSpecificColumnsOnly}
               >
-                {showSpecificColumnsOnly 
-                  ? (isKeyColumn ? "✅ Key Column" : "❌ Hidden") 
-                  : (hiddenColumns.has(h) ? "❌ Hidden" : "✅ Show")
-                } : {h}
+                {isHidden ? "❌ Hidden" : "✅ Show"} : {h}
               </button>
             );
           })}

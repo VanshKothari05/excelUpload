@@ -16,13 +16,6 @@ export default function Tabs({ activeTab, setActiveTab, savedCount }) {
       >
         Preview
       </button>
-
-      <button
-        className={`${styles.tab} ${activeTab === "database" ? styles.activeTab : ""}`}
-        onClick={() => setActiveTab("database")}
-      >
-        Database ({savedCount})
-      </button>
     </div>
   );
 }

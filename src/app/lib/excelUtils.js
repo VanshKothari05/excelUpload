@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 
-// ✅ Auto detect header row index (per file)
+//  Auto detect header row index (per file)
 export const detectHeaderRowIndex = (sheet) => {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
 
@@ -31,7 +31,7 @@ export const detectHeaderRowIndex = (sheet) => {
   return bestIndex;
 };
 
-// ✅ Read Excel file with hyperlinks preserved (NO ROW SHIFT)
+//  Read Excel file with hyperlinks preserved and empty rows/columns handled
 export const readExcelFileData = (binaryString, headerRowIndex) => {
   const workbook = XLSX.read(binaryString, { type: "binary" });
   const sheetName = workbook.SheetNames[0];
@@ -85,7 +85,7 @@ export const readExcelFileData = (binaryString, headerRowIndex) => {
   return { data, headers, hyperlinks };
 };
 
-// ✅ Strong empty column detection
+//  Strong empty column detection
 export const isColumnEmptySmart = (mergedData, colName) => {
   if (!mergedData) return true;
 
