@@ -15,9 +15,11 @@ export default function PreviewSection({
   applyNumericDelta,
   exportToExcel,
   loading,
+  showSpecificColumnsOnly,
+  setShowSpecificColumnsOnly,
+  originalHiddenColumns,
+  setOriginalHiddenColumns,
 }) {
-  const [showSpecificColumnsOnly, setShowSpecificColumnsOnly] = useState(false);
-  const [originalHiddenColumns, setOriginalHiddenColumns] = useState(new Set());
 
   const specificColumns = [
     "Sr No",
@@ -27,7 +29,7 @@ export default function PreviewSection({
     "Clarity",
     "Polish",
     "Symmetry",
-    "Fluorescence",
+    "Fluro",
     "Discount",
     "Measurement",
     "Depth",
@@ -37,6 +39,42 @@ export default function PreviewSection({
     "Add Comments",
     "Luster"
   ];
+
+  // ✅ NEW: Helper function to check if a column contains numeric data
+  const isNumericColumn = (columnName) => {
+    if (!mergedData || !mergedData.rows) return false;
+    
+    // Check first 10 non-empty values to determine if column is numeric
+    let numericCount = 0;
+    let totalChecked = 0;
+    
+    for (let i = 0; i < mergedData.rows.length && totalChecked < 10; i++) {
+      const value = mergedData.rows[i][columnName];
+      
+      // Skip empty values
+      if (value === null || value === undefined || String(value).trim() === "") {
+        continue;
+      }
+      
+      totalChecked++;
+      const num = Number(value);
+      
+      // Check if it's a valid number
+      if (!isNaN(num) && isFinite(num)) {
+        numericCount++;
+      }
+    }
+    
+    // If at least 80% of checked values are numeric, consider it a numeric column
+    return totalChecked > 0 && (numericCount / totalChecked) >= 0.8;
+  };
+
+  // ✅ NEW: Get only numeric columns for the dropdown
+  const getNumericColumns = () => {
+    if (!mergedData) return [];
+    
+    return mergedData.headers.filter(header => isNumericColumn(header));
+  };
 
   const toggleSpecificColumns = () => {
     const newMode = !showSpecificColumnsOnly;
@@ -181,7 +219,7 @@ export default function PreviewSection({
       <div className={styles.controlsBoxLight}>
         <h4 style={{ margin: 0, fontWeight: 700 }}>Numeric Column Adjuster</h4>
         <p className={styles.helperTextSmall}>
-          Example: Select <b>Rate</b> and set <b>+2</b> to increase every row rate by 2.
+          Example: Select <b>Rate</b> and set <b>+2</b> to increase every row rate by 2. Only numeric columns are shown.
         </p>
 
         <div className={styles.numericRow}>
@@ -191,8 +229,9 @@ export default function PreviewSection({
             className={styles.input}
             style={{ maxWidth: 250 }}
           >
-            <option value="">Select Column</option>
-            {mergedData.headers.map((h) => (
+            <option value="">Select Numeric Column</option>
+            {/* ✅ CHANGED: Only show numeric columns */}
+            {getNumericColumns().map((h) => (
               <option key={h} value={h}>
                 {h}
               </option>

@@ -36,6 +36,10 @@ const [columnMappings, setColumnMappings] = useState({});
 
   const [numericColumn, setNumericColumn] = useState("");
   const [numericDelta, setNumericDelta] = useState(0);
+  
+  // ✅ NEW: Track "Show Key Columns Only" state in parent
+  const [showSpecificColumnsOnly, setShowSpecificColumnsOnly] = useState(false);
+  const [originalHiddenColumns, setOriginalHiddenColumns] = useState(new Set());
 
   // Normalize header names for auto mapping
   const normalizeHeader = (str) => {
@@ -105,10 +109,9 @@ const saveMappingsToStorage = (mappings) => {
       "Color": ["color", "col", "colour"],
       "Fancy Color": ["fancy color", "fancy col", "fan colour", "fancy colour", "fl col"],
       "Clarity": ["clarity", "purity", "cla", "pur"],
-      "Polish": ["polish", "pol", "polished"],
+      "Polish": ["polish", "pol"],
       "Stone ID": ["stone id", "stock id", "packet no", "stone no", "stone id no", "id"],
-      "Fluorescence": ["fluorescence", "fluor", "fl", "flo"],
-      "Fluorescence Image": ["fluro"],
+      "Fluro": ["fluro","flour","fluor", "fl", "flo"],
       "Shade": ["shade", "tinge", "cs", "color shade"],
       "Symmetry": ["symmetry", "sym"],
       "Price": ["price", "pri", "pr/ct", "pr ct", "price/cts inr", "prct"],
@@ -443,6 +446,11 @@ const handleFileUpload = (e) => {
   });
 
   e.target.value = "";
+  
+  // ✅ RESET auto-mapped state when new files are added
+  // This ensures green color resets on file addition
+  setAutoMapped({});
+  console.log('🔄 Files added - resetting auto-mapped state');
 };
 
   const removeFile = (fileId) => {
@@ -479,6 +487,11 @@ const handleFileUpload = (e) => {
     setManualMapped(updatedManual);
     setMergedPairsData(updatedPairs);
     saveMappingsToStorage(updatedManual);
+    
+    // ✅ RESET auto-mapped (green color) when any file is removed
+    // This ensures clean state after file changes
+    setAutoMapped({});
+    console.log('🔄 File removed - resetting auto-mapped state');
     
     // If no files left, clear everything
     if (files.length === 1) {
@@ -558,9 +571,14 @@ const handleFileUpload = (e) => {
       return;
     }
 
+    // ✅ RESET ALL COLUMN CONTROL STATES when merging files
     setHiddenColumns(new Set());
     setNumericColumn("");
     setNumericDelta(0);
+    setShowSpecificColumnsOnly(false);
+    setOriginalHiddenColumns(new Set());
+    
+    console.log('🔄 Column controls reset - fresh state for new merge');
 
     let finalMappings = columnMappings;
 
@@ -821,7 +839,30 @@ const handleFileUpload = (e) => {
           const mappedColumn = regularMappings[mappingKey];
           
           if (mappedColumn && linkRow[originalColumn]) {
-            mappedLinkRow[mappedColumn] = linkRow[originalColumn];
+            // ✅ Check if this is Fluorescence or Polish column
+            const columnLower = mappedColumn.toLowerCase();
+            const isFluorOrPolish = 
+              columnLower.includes("fluorescence") || 
+              columnLower.includes("fluor") ||
+              columnLower === "fl" ||
+              columnLower.includes("fluro") ||
+              columnLower.includes("polish") ||
+              columnLower === "pol";
+            
+            // If Fluorescence or Polish, check text length
+            if (isFluorOrPolish) {
+              const cellValue = mappedRow[mappedColumn];
+              const textLength = cellValue ? String(cellValue).length : 0;
+              
+              // Only keep link if text is 10 characters or less
+              if (textLength <= 10) {
+                mappedLinkRow[mappedColumn] = linkRow[originalColumn];
+              }
+              // Otherwise, skip the hyperlink (text only)
+            } else {
+              // For other columns, keep hyperlinks normally
+              mappedLinkRow[mappedColumn] = linkRow[originalColumn];
+            }
           }
         });
 
@@ -845,13 +886,20 @@ const handleFileUpload = (e) => {
     console.log("=== FINAL MERGED DATA HEADERS ===");
     console.log(Array.from(mappedHeaders));
 
-    //  AUTO HIDE only Meas MM, Height, M1, M2, M3 columns 
-    const autoHide = new Set(hiddenColumns);
+    setMergedData({
+      headers: Array.from(mappedHeaders),
+      rows: merged,
+      hyperlinks: mergedHyperlinks,
+    });
+
+    // ✅ AUTO-HIDE Meas MM, Height, M1, M2, M3 columns AFTER setting merged data
+    // This ensures consistent behavior - these columns are always hidden when present
+    const autoHide = new Set();
 
     Array.from(mappedHeaders).forEach((h) => {
       const lower = h.toLowerCase();
 
-      // Only hide Meas MM, Height, M1, M2, M3
+      // Always hide these columns when they exist in the merged data
       if (
         (lower.includes("meas") && lower.includes("mm")) ||
         lower === "height" ||
@@ -860,16 +908,11 @@ const handleFileUpload = (e) => {
         lower === "m3"
       ) {
         autoHide.add(h);
+        console.log(`🔒 Auto-hiding column: ${h}`);
       }
     });
 
     setHiddenColumns(autoHide);
-
-    setMergedData({
-      headers: Array.from(mappedHeaders),
-      rows: merged,
-      hyperlinks: mergedHyperlinks,
-    });
 
     setActiveTab("preview");
   };
@@ -1079,6 +1122,10 @@ const handleFileUpload = (e) => {
               applyNumericDelta={applyNumericDelta}
               exportToExcel={exportToExcel}
               loading={loading}
+              showSpecificColumnsOnly={showSpecificColumnsOnly}
+              setShowSpecificColumnsOnly={setShowSpecificColumnsOnly}
+              originalHiddenColumns={originalHiddenColumns}
+              setOriginalHiddenColumns={setOriginalHiddenColumns}
             />
           )}
         </div>
@@ -1086,4 +1133,3 @@ const handleFileUpload = (e) => {
     </div>
   );
 }
-
