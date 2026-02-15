@@ -117,6 +117,9 @@ const saveMappingsToStorage = (mappings) => {
       "Rap Price": ["rap price", "rap", "rap rate", "rap list", "base rate", "base value", "baserate"],
       "Lab": ["lab"],
       "Measurement": ["measurement", "meas", "measm", "measurment"],
+      "M1": ["m1"],
+      "M2": ["m2"],
+      "M3": ["m3"],
       "Height": ["height"],
       "Ratio": ["ratio", "l/w", "l w", "lw"],
       "Girdle": ["girdle", "girdal%", "gir", "girdie desc", "girdal", "grd%", "grd %"],
@@ -295,8 +298,8 @@ const autoMapHeaders = () => {
     }
   });
 
-  // ✅ AUTO-MARK Height, Meas MM, and Measurement as auto-mapped (green)
-  // These are internally combined in mergeFiles function: L*W*H → Measurement
+  // ✅ AUTO-MARK Height, Meas MM, Measurement, M1, M2, M3 as auto-mapped (green)
+  // These are internally combined in mergeFiles function: L*W*H → Measurement or M1×M2×M3 → Measurement
   files.forEach((file) => {
     file.headers.forEach((header) => {
       const lower = normalizeHeader(header);
@@ -314,11 +317,16 @@ const autoMapHeaders = () => {
         auto[key] = true;
       }
       
-      // Mark Measurement columns (the combined result L*W*H)
+      // Mark Measurement columns (the combined result L*W*H or M1×M2×M3)
       if (lower === "measurement" || 
           lower === "meas" || 
           lower === "measm" ||
           lower === "measurment") {
+        auto[key] = true;
+      }
+      
+      // ✅ NEW: Mark M1, M2, M3 columns (used in M1×M2×M3 combination)
+      if (lower === "m1" || lower === "m2" || lower === "m3") {
         auto[key] = true;
       }
     });
@@ -328,7 +336,7 @@ const autoMapHeaders = () => {
   
   console.log('✅ Auto mapping complete. Total mappings:', Object.keys(mappings).length);
   console.log('Manual mappings preserved:', Object.keys(savedManual).length);
-  console.log('✅ Height/Meas MM/Measurement marked as auto-mapped (green)');
+  console.log('✅ Height/Meas MM/Measurement/M1/M2/M3 marked as auto-mapped (green)');
 };
 //  Decombine/remove entire mapping pair
 const decombineMapping = (mergedColumnName) => {
@@ -628,6 +636,22 @@ const handleFileUpload = (e) => {
       mappedHeaders.add(dimName);
     });
 
+    // ✅ If we have M1, M2, M3, Height, or Meas MM columns, ensure Measurement column exists
+    const hasM1M2M3 = Array.from(mappedHeaders).some(h => {
+      const lower = h.toLowerCase();
+      return lower === "m1" || lower === "m2" || lower === "m3";
+    });
+    
+    const hasHeightOrMeasMM = Array.from(mappedHeaders).some(h => {
+      const lower = h.toLowerCase();
+      return lower === "height" || (lower.includes("meas") && lower.includes("mm"));
+    });
+    
+    if ((hasM1M2M3 || hasHeightOrMeasMM) && !Array.from(mappedHeaders).some(h => h.toLowerCase().includes("measurement"))) {
+      mappedHeaders.add("Measurement");
+      console.log("✅ Added Measurement column (detected M1/M2/M3 or Height/Meas MM)");
+    }
+
     console.log("=== MAPPED HEADERS (should be unique) ===");
     console.log(Array.from(mappedHeaders));
 
@@ -682,28 +706,78 @@ const handleFileUpload = (e) => {
         //  BUILD L*W*H INTO MEASUREMENT COLUMN
         let heightVal = "";
         let lwVal = "";
+        
+        // ✅ NEW: Detect M1, M2, M3 columns and combine them
+        let m1Val = "";
+        let m2Val = "";
+        let m3Val = "";
 
         Object.keys(row).forEach(col => {
           const v = row[col];
           if (!v) return;
 
           const lower = col.toLowerCase();
+          const normalized = normalizeHeader(col);
 
+          // Check for Height columns
           if (lower.includes("height")) {
             heightVal = v;
           }
 
+          // Check for L*W format (existing logic)
           if (String(v).includes("*") && !lower.includes("height")) {
             lwVal = v;
           }
+
+          // ✅ NEW: Check for M1, M2, M3 columns
+          if (normalized === "m1" || lower === "m1" || col === "M1") {
+            m1Val = v;
+          }
+          if (normalized === "m2" || lower === "m2" || col === "M2") {
+            m2Val = v;
+          }
+          if (normalized === "m3" || lower === "m3" || col === "M3") {
+            m3Val = v;
+          }
         });
 
-        if (lwVal && heightVal) {
-          Object.keys(mappedRow).forEach(h => {
-            if (h.toLowerCase().includes("measurement")) {
-              mappedRow[h] = `${lwVal}*${heightVal}`;
+        // ✅ BUILD L*W*H OR M1×M2×M3 INTO MEASUREMENT COLUMN
+        // Build measurement directly if we have the components
+        let measurementValue = "";
+        
+        // Priority 1: M1 × M2 × M3
+        if (m1Val && m2Val && m3Val) {
+          measurementValue = `${m1Val}×${m2Val}×${m3Val}`;
+        }
+        // Priority 2: M1 × M2
+        else if (m1Val && m2Val) {
+          measurementValue = `${m1Val}×${m2Val}`;
+        }
+        // Priority 3: L*W*H
+        else if (lwVal && heightVal) {
+          measurementValue = `${lwVal}*${heightVal}`;
+        }
+        // Priority 4: Just M1
+        else if (m1Val) {
+          measurementValue = m1Val;
+        }
+        
+        // Set the measurement value if we built one
+        if (measurementValue) {
+          // Check if there's already a Measurement column in mappedRow
+          const measurementKey = Object.keys(mappedRow).find(h => 
+            h.toLowerCase().includes("measurement")
+          );
+          
+          if (measurementKey) {
+            // If Measurement column exists, set or append the value
+            if (!mappedRow[measurementKey] || mappedRow[measurementKey] === "") {
+              mappedRow[measurementKey] = measurementValue;
             }
-          });
+          } else {
+            // If no Measurement column exists, create it
+            mappedRow["Measurement"] = measurementValue;
+          }
         }
 
         // Handle regular columns
@@ -771,16 +845,19 @@ const handleFileUpload = (e) => {
     console.log("=== FINAL MERGED DATA HEADERS ===");
     console.log(Array.from(mappedHeaders));
 
-    //  AUTO HIDE only Meas MM and Height columns 
+    //  AUTO HIDE only Meas MM, Height, M1, M2, M3 columns 
     const autoHide = new Set(hiddenColumns);
 
     Array.from(mappedHeaders).forEach((h) => {
       const lower = h.toLowerCase();
 
-      // Only hide Meas MM and Height 
+      // Only hide Meas MM, Height, M1, M2, M3
       if (
         (lower.includes("meas") && lower.includes("mm")) ||
-        lower === "height"
+        lower === "height" ||
+        lower === "m1" ||
+        lower === "m2" ||
+        lower === "m3"
       ) {
         autoHide.add(h);
       }
@@ -982,7 +1059,9 @@ const handleFileUpload = (e) => {
     showMergedPairs={showMergedPairs}
     setShowMergedPairs={setShowMergedPairs}
     mergedPairsData={mergedPairsData}
+    setMergedPairsData={setMergedPairsData}
     decombineMapping={decombineMapping}
+    saveMappingsToStorage={saveMappingsToStorage}
   />
 )}
 

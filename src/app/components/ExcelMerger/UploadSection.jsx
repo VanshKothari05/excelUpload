@@ -16,7 +16,9 @@ export default function UploadSection({
   showMergedPairs,
   setShowMergedPairs,
   mergedPairsData,
-  decombineMapping
+  setMergedPairsData,
+  decombineMapping,
+  saveMappingsToStorage
 }) {
   const [dragItem, setDragItem] = useState(null);
 const [dragOverTarget, setDragOverTarget] = useState(null); ///
@@ -44,21 +46,35 @@ const onDrop = (targetFileId, targetHeader) => {
     `Map "${dragItem.header}" with "${targetHeader}"\n\nType:\n1 → keep first name\n2 → keep second name\n3 → custom name`
   );
 
+  // If user cancels the prompt, exit
+  if (option === null) {
+    setDragItem(null);
+    return;
+  }
+
   let finalName = targetHeader;
 
   if (option === "1") finalName = dragItem.header;
   else if (option === "2") finalName = targetHeader;
   else if (option === "3") {
     const custom = prompt("Enter custom merged column name");
-    if (custom) finalName = custom;
+    if (custom && custom.trim()) {
+      finalName = custom.trim();
+    } else {
+      // If cancelled or empty, exit
+      setDragItem(null);
+      return;
+    }
   }
 
+  // Update column mappings
   setColumnMappings((prev) => ({
     ...prev,
     [sourceKey]: finalName,
     [targetKey]: finalName,
   }));
 
+  // Update manual mapped state
   const updatedManual = {
     ...manualMapped,
     [sourceKey]: finalName,
@@ -67,11 +83,58 @@ const onDrop = (targetFileId, targetHeader) => {
 
   setManualMapped(updatedManual);
 
-  try {
-    localStorage.setItem('manualColumnMappings', JSON.stringify(updatedManual));
-  } catch (error) {
-    console.error('Failed to save manual mapping:', error);
-  }
+  // ✅ INSTANT UPDATE: Add to mergedPairsData immediately
+  setMergedPairsData((prev) => {
+    const updated = { ...prev };
+    
+    // Get file names
+    const sourceFile = files.find(f => f.id === dragItem.fileId);
+    const targetFile = files.find(f => f.id === targetFileId);
+    
+    if (!sourceFile || !targetFile) return prev;
+    
+    // Initialize array for this merged column if it doesn't exist
+    if (!updated[finalName]) {
+      updated[finalName] = [];
+    }
+    
+    // Check if source key already exists
+    const sourceExists = updated[finalName].some(p => p.key === sourceKey);
+    if (!sourceExists) {
+      updated[finalName].push({
+        key: sourceKey,
+        fileName: sourceFile.name,
+        originalHeader: dragItem.header,
+        isManual: true
+      });
+    } else {
+      // Update existing entry to mark as manual
+      updated[finalName] = updated[finalName].map(p =>
+        p.key === sourceKey ? { ...p, isManual: true } : p
+      );
+    }
+    
+    // Check if target key already exists
+    const targetExists = updated[finalName].some(p => p.key === targetKey);
+    if (!targetExists) {
+      updated[finalName].push({
+        key: targetKey,
+        fileName: targetFile.name,
+        originalHeader: targetHeader,
+        isManual: true
+      });
+    } else {
+      // Update existing entry to mark as manual
+      updated[finalName] = updated[finalName].map(p =>
+        p.key === targetKey ? { ...p, isManual: true } : p
+      );
+    }
+    
+    return updated;
+  });
+
+  // Save to localStorage using provided function
+  saveMappingsToStorage(updatedManual);
 
   setDragItem(null);
 }; ///
