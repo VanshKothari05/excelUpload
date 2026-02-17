@@ -1,5 +1,5 @@
 import styles from "./uploadSection.module.css";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function UploadSection({
   files,
@@ -21,138 +21,239 @@ export default function UploadSection({
   saveMappingsToStorage
 }) {
   const [dragItem, setDragItem] = useState(null);
-const [dragOverTarget, setDragOverTarget] = useState(null); ///
-const onDragStart = (fileId, header) => {
-  setDragItem({ fileId, header });
-};
+  const [dragOverTarget, setDragOverTarget] = useState(null);
 
-const onDragOverHeader = (fileId, header) => {
-  setDragOverTarget(`${fileId}::${header}`);
-};
+  // ✅ NEW: Success notification state
+  const [successNotification, setSuccessNotification] = useState(null);
 
-const onDragLeaveHeader = () => {
-  setDragOverTarget(null);
-};
+  // ✅ Auto-hide notification after 3-4 seconds
+  useEffect(() => {
+    if (successNotification) {
+      const timer = setTimeout(() => {
+        setSuccessNotification(null);
+      }, 3500); // 3.5 seconds
 
-const onDrop = (targetFileId, targetHeader) => {
-  setDragOverTarget(null);
+      return () => clearTimeout(timer);
+    }
+  }, [successNotification]);
 
-  if (!dragItem) return;
+  const onDragStart = (fileId, header) => {
+    setDragItem({ fileId, header });
+  };
 
-  const sourceKey = `${dragItem.fileId}::${dragItem.header}`;
-  const targetKey = `${targetFileId}::${targetHeader}`;
+  const onDragOverHeader = (fileId, header) => {
+    setDragOverTarget(`${fileId}::${header}`);
+  };
 
-  const option = prompt(
-    `Map "${dragItem.header}" with "${targetHeader}"\n\nType:\n1 → keep first name\n2 → keep second name\n3 → custom name`
-  );
+  const onDragLeaveHeader = () => {
+    setDragOverTarget(null);
+  };
 
-  // If user cancels the prompt, exit
-  if (option === null) {
-    setDragItem(null);
-    return;
-  }
+  const onDrop = (targetFileId, targetHeader) => {
+    setDragOverTarget(null);
 
-  let finalName = targetHeader;
+    if (!dragItem) return;
 
-  if (option === "1") finalName = dragItem.header;
-  else if (option === "2") finalName = targetHeader;
-  else if (option === "3") {
-    const custom = prompt("Enter custom merged column name");
-    if (custom && custom.trim()) {
-      finalName = custom.trim();
-    } else {
-      // If cancelled or empty, exit
+    const sourceKey = `${dragItem.fileId}::${dragItem.header}`;
+    const targetKey = `${targetFileId}::${targetHeader}`;
+
+    const option = prompt(
+      `Map "${dragItem.header}" with "${targetHeader}"\n\nType:\n1 → keep first name\n2 → keep second name\n3 → custom name`
+    );
+
+    // If user cancels the prompt, exit
+    if (option === null) {
       setDragItem(null);
       return;
     }
-  }
 
-  // Update column mappings
-  setColumnMappings((prev) => ({
-    ...prev,
-    [sourceKey]: finalName,
-    [targetKey]: finalName,
-  }));
+    let finalName = targetHeader;
 
-  // Update manual mapped state
-  const updatedManual = {
-    ...manualMapped,
-    [sourceKey]: finalName,
-    [targetKey]: finalName
+    if (option === "1") finalName = dragItem.header;
+    else if (option === "2") finalName = targetHeader;
+    else if (option === "3") {
+      const custom = prompt("Enter custom merged column name");
+      if (custom && custom.trim()) {
+        finalName = custom.trim();
+      } else {
+        // If cancelled or empty, exit
+        setDragItem(null);
+        return;
+      }
+    }
+
+    // Update column mappings
+    setColumnMappings((prev) => ({
+      ...prev,
+      [sourceKey]: finalName,
+      [targetKey]: finalName,
+    }));
+
+    // Update manual mapped state
+    const updatedManual = {
+      ...manualMapped,
+      [sourceKey]: finalName,
+      [targetKey]: finalName
+    };
+
+    setManualMapped(updatedManual);
+
+    // ✅ INSTANT UPDATE: Add to mergedPairsData immediately
+    setMergedPairsData((prev) => {
+      const updated = { ...prev };
+      
+      // Get file names
+      const sourceFile = files.find(f => f.id === dragItem.fileId);
+      const targetFile = files.find(f => f.id === targetFileId);
+      
+      if (!sourceFile || !targetFile) return prev;
+      
+      // Initialize array for this merged column if it doesn't exist
+      if (!updated[finalName]) {
+        updated[finalName] = [];
+      }
+      
+      // Check if source key already exists
+      const sourceExists = updated[finalName].some(p => p.key === sourceKey);
+      if (!sourceExists) {
+        updated[finalName].push({
+          key: sourceKey,
+          fileName: sourceFile.name,
+          originalHeader: dragItem.header,
+          isManual: true
+        });
+      } else {
+        // Update existing entry to mark as manual
+        updated[finalName] = updated[finalName].map(p =>
+          p.key === sourceKey ? { ...p, isManual: true } : p
+        );
+      }
+      
+      // Check if target key already exists
+      const targetExists = updated[finalName].some(p => p.key === targetKey);
+      if (!targetExists) {
+        updated[finalName].push({
+          key: targetKey,
+          fileName: targetFile.name,
+          originalHeader: targetHeader,
+          isManual: true
+        });
+      } else {
+        // Update existing entry to mark as manual
+        updated[finalName] = updated[finalName].map(p =>
+          p.key === targetKey ? { ...p, isManual: true } : p
+        );
+      }
+      
+      return updated;
+    });
+
+    // Save to localStorage using provided function
+    saveMappingsToStorage(updatedManual);
+
+    setDragItem(null);
   };
 
-  setManualMapped(updatedManual);
-
-  // ✅ INSTANT UPDATE: Add to mergedPairsData immediately
-  setMergedPairsData((prev) => {
-    const updated = { ...prev };
+  // ✅ NEW: Handle delete with success notification
+  const handleDecombine = (mergedColumnName) => {
+    const result = decombineMapping(mergedColumnName);
     
-    // Get file names
-    const sourceFile = files.find(f => f.id === dragItem.fileId);
-    const targetFile = files.find(f => f.id === targetFileId);
-    
-    if (!sourceFile || !targetFile) return prev;
-    
-    // Initialize array for this merged column if it doesn't exist
-    if (!updated[finalName]) {
-      updated[finalName] = [];
+    // If decombineMapping returned a value (merged column name), show success notification
+    if (result) {
+      setSuccessNotification(`Mapping "${result}" removed successfully!`);
     }
-    
-    // Check if source key already exists
-    const sourceExists = updated[finalName].some(p => p.key === sourceKey);
-    if (!sourceExists) {
-      updated[finalName].push({
-        key: sourceKey,
-        fileName: sourceFile.name,
-        originalHeader: dragItem.header,
-        isManual: true
-      });
-    } else {
-      // Update existing entry to mark as manual
-      updated[finalName] = updated[finalName].map(p =>
-        p.key === sourceKey ? { ...p, isManual: true } : p
-      );
-    }
-    
-    // Check if target key already exists
-    const targetExists = updated[finalName].some(p => p.key === targetKey);
-    if (!targetExists) {
-      updated[finalName].push({
-        key: targetKey,
-        fileName: targetFile.name,
-        originalHeader: targetHeader,
-        isManual: true
-      });
-    } else {
-      // Update existing entry to mark as manual
-      updated[finalName] = updated[finalName].map(p =>
-        p.key === targetKey ? { ...p, isManual: true } : p
-      );
-    }
-    
-    return updated;
-  });
-
-  // Save to localStorage using provided function
-  saveMappingsToStorage(updatedManual);
-
-  setDragItem(null);
-}; ///
+  };
 
   return (
     <div className={styles.uploadSection}>
+      {/* ✅ NEW: Success notification banner */}
+      {successNotification && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 9999,
+          background: '#48bb78',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          animation: 'slideIn 0.3s ease-out',
+          maxWidth: '400px'
+        }}>
+          <div style={{
+            width: '24px',
+            height: '24px',
+            background: 'white',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <span style={{ color: '#48bb78', fontSize: '18px', fontWeight: 'bold' }}>✓</span>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: '600', marginBottom: '2px' }}>Success!</div>
+            <div style={{ fontSize: '14px', opacity: 0.95 }}>{successNotification}</div>
+          </div>
+          {/* Progress bar */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            height: '3px',
+            background: 'rgba(255,255,255,0.4)',
+            width: '100%',
+            borderRadius: '0 0 8px 8px'
+          }}>
+            <div style={{
+              height: '100%',
+              background: 'white',
+              borderRadius: '0 0 8px 8px',
+              animation: 'progressBar 3.5s linear forwards'
+            }}></div>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(400px);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        
+        @keyframes progressBar {
+          from {
+            width: 100%;
+          }
+          to {
+            width: 0%;
+          }
+        }
+      `}</style>
+
       <div className={styles.uploadArea}>
         <label htmlFor="fileInput" className={styles.uploadLabel}>
           <div className={styles.uploadIcon}>📁</div>
           <div className={styles.uploadText}>
             <strong>Click to upload</strong> or drag and drop
           </div>
-          <div className={styles.uploadHint}>Excel files (.xlsx, .xls)</div>
+          <div className={styles.uploadHint}>Excel & CSV files (.xlsx, .xls, .csv)</div>
         </label>
         <input
           id="fileInput"
           type="file"
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.csv"
           multiple
           onChange={onUpload}
           className={styles.fileInput}
@@ -189,7 +290,7 @@ const onDrop = (targetFileId, targetHeader) => {
             Drag & drop columns to merge manually
           </div>
 
-          {/*  Legend + Show Merged Pairs button side by side */}
+          {/*  Legend */}
           <div className={styles.legendRow}>
             <div className={styles.legend}>
               <div className={styles.legendItem}>
@@ -201,16 +302,6 @@ const onDrop = (targetFileId, targetHeader) => {
                 Manual mapped
               </div>
             </div>
-
-            {/* Show Merged Pairs button next to legend */}
-            {Object.keys(mergedPairsData).length > 0 && (
-              <button 
-                onClick={() => setShowMergedPairs(!showMergedPairs)} 
-                className={styles.showPairsBtnCompact}
-              >
-                {showMergedPairs ? '▼' : '▶'} View Pairs ({Object.keys(mergedPairsData).length})
-              </button>
-            )}
           </div>
 
           <div className={styles.filesList}>
@@ -231,30 +322,29 @@ const onDrop = (targetFileId, targetHeader) => {
                     if (manualMapped[key]) highlight = styles.manual;
 
                     return (
-<div
-  key={header}
-  draggable
-  onDragStart={() => onDragStart(file.id, header)}
-  onDragOver={(e) => {
-    e.preventDefault();
-    onDragOverHeader(file.id, header);
-  }}
-  onDragLeave={onDragLeaveHeader}
-  onDrop={() => onDrop(file.id, header)}
-  className={`
-    ${styles.headerTag} 
-    ${highlight}
-    ${dragOverTarget === `${file.id}::${header}` ? styles.dragTarget : ""}
-  `}
->
-  {header}
+                      <div
+                        key={header}
+                        draggable
+                        onDragStart={() => onDragStart(file.id, header)}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          onDragOverHeader(file.id, header);
+                        }}
+                        onDragLeave={onDragLeaveHeader}
+                        onDrop={() => onDrop(file.id, header)}
+                        className={`
+                          ${styles.headerTag} 
+                          ${highlight}
+                          ${dragOverTarget === `${file.id}::${header}` ? styles.dragTarget : ""}
+                        `}
+                      >
+                        {header}
 
-  {/*  Arrow indicator */}
-  {dragOverTarget === `${file.id}::${header}` && dragItem && (
-    <span className={styles.dropArrow}>⬇ Drop Here</span>
-  )}
-</div>
-
+                        {/*  Arrow indicator */}
+                        {dragOverTarget === `${file.id}::${header}` && dragItem && (
+                          <span className={styles.dropArrow}>⬇ Drop Here</span>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -272,17 +362,20 @@ const onDrop = (targetFileId, targetHeader) => {
             </button>
           </div>
 
-          {/*  Merged Pairs with ONE cross per group */}
-          {showMergedPairs && Object.keys(mergedPairsData).length > 0 && (
+          {/*  Merged Pairs - ALWAYS VISIBLE with dynamic grid layout */}
+          {Object.keys(mergedPairsData).length > 0 && (
             <div className={styles.mergedPairsSection}>
-              <div className={styles.mergedPairsList}>
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 700, color: '#2d3748' }}>
+                Merged Column Pairs ({Object.keys(mergedPairsData).length})
+              </h4>
+              <div className={styles.mergedPairsGrid}>
                 {Object.keys(mergedPairsData).map((mergedColumn) => (
                   <div key={mergedColumn} className={styles.pairGroup}>
                     <div className={styles.pairGroupHeader}>
                       <strong>→ {mergedColumn}</strong>
-                      {/* ✅ FIXED: Call decombineMapping directly with only mergedColumn */}
+                      {/* ✅ Use handleDecombine instead of direct call */}
                       <button
-                        onClick={() => decombineMapping(mergedColumn)}
+                        onClick={() => handleDecombine(mergedColumn)}
                         className={styles.removeGroupBtn}
                         title="Remove entire merged group"
                       >

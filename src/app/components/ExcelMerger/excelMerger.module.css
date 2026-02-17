@@ -1,37 +1,27 @@
 .container {
-  min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 2rem;
+  min-height: 100vh; /* fills full screen */
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start; /* keeps card at top */
 }
 
 .card {
   max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
   background: white;
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+  height:fit-content;
 }
 
-.header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 2rem;
-  color: white;
-}
 
-.title {
-  font-size: 2rem;
-  font-weight: bold;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 
-.subtitle {
-  margin-top: 8px;
-  opacity: 0.9;
-}
+
 
 .tabs {
   display: flex;

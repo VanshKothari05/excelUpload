@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 
-import Header from "./Header";
 import Tabs from "./Tabs";
 import UploadSection from "./UploadSection";
 import PreviewSection from "./PreviewSection";
@@ -40,6 +39,10 @@ const [columnMappings, setColumnMappings] = useState({});
   // ✅ NEW: Track "Show Key Columns Only" state in parent
   const [showSpecificColumnsOnly, setShowSpecificColumnsOnly] = useState(false);
   const [originalHiddenColumns, setOriginalHiddenColumns] = useState(new Set());
+  
+  // ✅ NEW: Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(100);
 
   // Normalize header names for auto mapping
   const normalizeHeader = (str) => {
@@ -105,21 +108,21 @@ const saveMappingsToStorage = (mappings) => {
     const normalized = normalizeHeader(header);
     // Synonym Table
     const synonymGroups = {
-      "Weight": ["weight", "carats", "cts", "ct", "carat"],
-      "Color": ["color", "col", "colour"],
+      "Weight": ["weight", "carats", "cts", "ct", "carat","size"],
+      "Color": ["color", "col", "colour", "dispcolor"],
       "Fancy Color": ["fancy color", "fancy col", "fan colour", "fancy colour", "fl col"],
-      "Clarity": ["clarity", "purity", "cla", "pur"],
+      "Clarity": ["clarity", "purity", "cla", "pur","dispclarity"],
       "Polish": ["polish", "pol"],
       "Stone ID": ["stone id", "stock id", "packet no", "stone no", "stone id no", "id"],
-      "Fluro": ["fluro","flour","fluor", "fl", "flo"],
+      "Fluro": ["fluro","flour","fluor", "fl", "flo", "fluorescence"],
       "Shade": ["shade", "tinge", "cs", "color shade"],
       "Symmetry": ["symmetry", "sym"],
       "Price": ["price", "pri", "pr/ct", "pr ct", "price/cts inr", "prct"],
-      "Discount": ["discount", "dis%", "disc%", "rep%", "back", "disc", "dis"],
+      "Discount": ["discount", "dis%", "disc%", "rep%", "back", "disc", "dis","%rap"],
       "Amount": ["amount", "sele amount", "total amount", "amt", "total price", "total value", "value", "total amt"],
       "Rap Price": ["rap price", "rap", "rap rate", "rap list", "base rate", "base value", "baserate"],
       "Lab": ["lab"],
-      "Measurement": ["measurement", "meas", "measm", "measurment"],
+      "Measurement": ["measurement", "meas", "measm", "measurment","measurements"],
       "M1": ["m1"],
       "M2": ["m2"],
       "M3": ["m3"],
@@ -142,7 +145,7 @@ const saveMappingsToStorage = (mappings) => {
       "Pav Ex Facet": ["pav ex facet", "pav_ex_facet"],
       "Milky": ["milky", "mil"],
       "Lab Comments": ["lab comments", "lab comment", "comment", "lab commnt"],
-      "Add Comments": ["add comments", "additional comments", "additonal comments", "addl comments"],
+      "Add Comments": ["add comments", "additional comments", "additonal comments", "addl comments","comment","comment"],
       "Type IIa": ["type iia", "type2a", "type 2a", "type iia"],
       "Key To Symbols": ["key to symbols", "key to sym", "key to symbol"],
       "Side Inclusion": ["side inclusion", "side incl"],
@@ -184,6 +187,7 @@ const saveMappingsToStorage = (mappings) => {
       "Table Black": ["table black"],
       "LP": ["lp"]
     };
+
 
     // Find matching standard name
     for (const [standardName, variations] of Object.entries(synonymGroups)) {
@@ -360,7 +364,7 @@ const decombineMapping = (mergedColumnName) => {
     return;
   }
 
-  // Show confirmation dialog
+  // Show confirmation dialog - ONLY ONE POPUP
   const pairCount = pairs.length;
   if (!confirm(`Are you sure you want to remove all ${pairCount} column(s) mapped to "${mergedColumnName}"?`)) {
     return;
@@ -396,7 +400,8 @@ const decombineMapping = (mergedColumnName) => {
   console.log('✅ Updated mappings:', updatedMappings);
   console.log('✅ Updated pairs:', updatedPairs);
 
-  alert(`✅ Mapping removed successfully! Click "Merge Files" to see updated result.`);
+  // ✅ NO ALERT - Return the merged column name to show success notification
+  return mergedColumnName;
 };
 //  Apply mappings from advanced modal
 
@@ -577,6 +582,9 @@ const handleFileUpload = (e) => {
     setNumericDelta(0);
     setShowSpecificColumnsOnly(false);
     setOriginalHiddenColumns(new Set());
+    
+    // ✅ RESET PAGINATION
+    setCurrentPage(1);
     
     console.log('🔄 Column controls reset - fresh state for new merge');
 
@@ -799,72 +807,89 @@ const handleFileUpload = (e) => {
         }
 
         // Handle regular columns
-        Object.keys(row).forEach((originalColumn) => {
-          const mappingKey = `${file.id}::${originalColumn}`;
-          
-          // Skip if this is a dimension column
-          const isDimension = Object.keys(dimensionMappings).some((dimName) => {
-            return dimensionMappings[dimName].some((dimCol) => 
-              dimCol.fileId === file.id && dimCol.originalColumn === originalColumn
-            );
-          });
-          
-          if (!isDimension) {
-            const mappedColumn = regularMappings[mappingKey];
-            
-            if (!mappedColumn) {
-              console.warn(`⚠️ No mapping found for: ${mappingKey}`);
-            }
-            
-            if (mappedColumn) {
-              const value = row[originalColumn];
-              
-              if (value !== undefined && value !== null && value !== "") {
-                if (mappedRow[mappedColumn] && mappedRow[mappedColumn] !== "") {
-                  mappedRow[mappedColumn] = mappedRow[mappedColumn] + ", " + value;
-                } else {
-                  mappedRow[mappedColumn] = value;
-                }
-              }
-            }
-          }
-        });
+// Handle regular columns
+Object.keys(row).forEach((originalColumn) => {
+  const mappingKey = `${file.id}::${originalColumn}`;
+  
+  // Skip if this is a dimension column
+  const isDimension = Object.keys(dimensionMappings).some((dimName) => {
+    return dimensionMappings[dimName].some((dimCol) => 
+      dimCol.fileId === file.id && dimCol.originalColumn === originalColumn
+    );
+  });
+  
+  if (!isDimension) {
+    const mappedColumn = regularMappings[mappingKey];
+    
+    if (!mappedColumn) {
+      console.warn(`⚠️ No mapping found for: ${mappingKey}`);
+    }
+    
+    if (mappedColumn) {
+      let value = row[originalColumn];
+      
+      if (value !== undefined && value !== null && value !== "") {
+        // ✅ CHECK if this is a Fluor/Polish column and clean URLs
+        const columnLower = mappedColumn.toLowerCase();
+        const isFluorOrPolish = 
+          columnLower.includes("fluorescence") || 
+          columnLower.includes("fluor") ||
+          columnLower === "fl" ||
+          columnLower.includes("fluro") ||
+          columnLower.includes("flour") ||
+          columnLower === "flo" ||
+          columnLower.includes("polish") ||
+          columnLower === "pol";
+        
+        // ✅ STRIP URLs from Fluor/Polish column text values
+        if (isFluorOrPolish) {
+          // Remove URLs (http:// or https://) from the text
+          value = String(value).replace(/,?\s*https?:\/\/[^\s,]+/gi, '').trim();
+          // Clean up any remaining commas at the end
+          value = value.replace(/,\s*$/, '').trim();
+          console.log(`🧹 Cleaned Fluor/Polish value: "${value}"`);
+        }
+        
+        if (mappedRow[mappedColumn] && mappedRow[mappedColumn] !== "") {
+          mappedRow[mappedColumn] = mappedRow[mappedColumn] + ", " + value;
+        } else {
+          mappedRow[mappedColumn] = value;
+        }
+      }
+    }
+  }
+});
 
-        //  Handle hyperlinks
-        const linkRow = file.hyperlinks?.[rIdx] || {};
-        const mappedLinkRow = {};
 
-        Object.keys(linkRow).forEach((originalColumn) => {
-          const mappingKey = `${file.id}::${originalColumn}`;
-          const mappedColumn = regularMappings[mappingKey];
-          
-          if (mappedColumn && linkRow[originalColumn]) {
-            // ✅ Check if this is Fluorescence or Polish column
-            const columnLower = mappedColumn.toLowerCase();
-            const isFluorOrPolish = 
-              columnLower.includes("fluorescence") || 
-              columnLower.includes("fluor") ||
-              columnLower === "fl" ||
-              columnLower.includes("fluro") ||
-              columnLower.includes("polish") ||
-              columnLower === "pol";
-            
-            // If Fluorescence or Polish, check text length
-            if (isFluorOrPolish) {
-              const cellValue = mappedRow[mappedColumn];
-              const textLength = cellValue ? String(cellValue).length : 0;
-              
-              // Only keep link if text is 10 characters or less
-              if (textLength <= 10) {
-                mappedLinkRow[mappedColumn] = linkRow[originalColumn];
-              }
-              // Otherwise, skip the hyperlink (text only)
-            } else {
-              // For other columns, keep hyperlinks normally
-              mappedLinkRow[mappedColumn] = linkRow[originalColumn];
-            }
-          }
-        });
+const linkRow = file.hyperlinks?.[rIdx] || {};
+const mappedLinkRow = {};
+
+Object.keys(linkRow).forEach((originalColumn) => {
+  const mappingKey = `${file.id}::${originalColumn}`;
+  const mappedColumn = regularMappings[mappingKey];
+  
+  if (mappedColumn && linkRow[originalColumn]) {
+    // ✅ Check if this is Fluorescence or Polish column
+    const columnLower = mappedColumn.toLowerCase();
+    const isFluorOrPolish = 
+      columnLower.includes("fluorescence") || 
+      columnLower.includes("fluor") ||
+      columnLower === "fl" ||
+      columnLower.includes("fluro") ||
+      columnLower.includes("flour") ||
+      columnLower === "flo" ||
+      columnLower.includes("polish") ||
+      columnLower === "pol";
+    
+    // ✅ SKIP hyperlinks for Fluorescence and Polish columns
+    // Only add hyperlink if it's NOT a Fluor/Polish column
+    if (!isFluorOrPolish) {
+      mappedLinkRow[mappedColumn] = linkRow[originalColumn];
+    } else {
+      console.log(`🚫 Skipping hyperlink for ${mappedColumn} column (Fluor/Polish)`);
+    }
+  }
+});
 
         mergedHyperlinks[merged.length] = mappedLinkRow;
         merged.push(mappedRow);
@@ -1078,7 +1103,7 @@ const handleFileUpload = (e) => {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        <Header />
+
 
         <Tabs
           activeTab={activeTab}
@@ -1126,6 +1151,10 @@ const handleFileUpload = (e) => {
               setShowSpecificColumnsOnly={setShowSpecificColumnsOnly}
               originalHiddenColumns={originalHiddenColumns}
               setOriginalHiddenColumns={setOriginalHiddenColumns}
+              currentPage={currentPage}
+              setCurrentPage={setCurrentPage}
+              rowsPerPage={rowsPerPage}
+              setRowsPerPage={setRowsPerPage}
             />
           )}
         </div>

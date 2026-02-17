@@ -19,7 +19,31 @@ export default function PreviewSection({
   setShowSpecificColumnsOnly,
   originalHiddenColumns,
   setOriginalHiddenColumns,
+  currentPage,
+  setCurrentPage,
+  rowsPerPage,
+  setRowsPerPage,
 }) {
+  
+  // ✅ Calculate pagination values
+  const totalRows = mergedData.rows.length;
+  const totalPages = Math.ceil(totalRows / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const endIndex = Math.min(startIndex + rowsPerPage, totalRows);
+  const paginatedRows = mergedData.rows.slice(startIndex, endIndex);
+  
+  // ✅ Handle page changes
+  const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+  
+  // ✅ Handle rows per page change
+  const handleRowsPerPageChange = (newRowsPerPage) => {
+    setRowsPerPage(newRowsPerPage);
+    setCurrentPage(1); // Reset to first page when changing rows per page
+  };
 
   const specificColumns = [
     "Sr No",
@@ -147,17 +171,42 @@ export default function PreviewSection({
     <div>
       <div className={styles.previewTop}>
         <h3 className={styles.sectionTitle}>
-          Merged Data ({mergedData.rows.length} rows)
+          Merged Data ({totalRows} rows total)
+          <span style={{ fontSize: '14px', fontWeight: 'normal', marginLeft: '10px', color: '#666' }}>
+            Showing {startIndex + 1}-{endIndex} of {totalRows}
+          </span>
         </h3>
 
         <div className={styles.previewButtons}>
-
-
           <button className={styles.button} onClick={() => exportToExcel()}>
             <Download size={18} />
             Export Excel
           </button>
         </div>
+      </div>
+      
+      {/* ✅ NEW: Rows per page selector */}
+      <div style={{ 
+        marginBottom: '15px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: '10px',
+        fontSize: '14px'
+      }}>
+        <label style={{ fontWeight: 600 }}>Rows per page:</label>
+        <select
+          value={rowsPerPage}
+          onChange={(e) => handleRowsPerPageChange(Number(e.target.value))}
+          className={styles.input}
+          style={{ maxWidth: 120, padding: '6px' }}
+        >
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+          <option value={250}>250</option>
+          <option value={500}>500</option>
+          <option value={1000}>1000</option>
+          <option value={totalRows}>All ({totalRows})</option>
+        </select>
       </div>
 
       <div className={styles.controlsBox}>
@@ -189,7 +238,7 @@ export default function PreviewSection({
             fontSize: "14px"
           }}>
             <p style={{ margin: 0, color: "#4a5568" }}>
-              <strong>Key Columns Mode:</strong> The 17 key columns are shown with green borders and are visible by default. 
+              <strong>Key Columns Mode:</strong> The 16  key columns are shown with green borders and are visible by default. 
               Other columns are hidden (red) but you can click any to make them visible (green) in the table. 
               Clicking "Show All Columns" will restore your original column settings.
             </p>
@@ -266,34 +315,200 @@ export default function PreviewSection({
           </thead>
 
           <tbody>
-            {mergedData.rows.slice(0, 100).map((row, idx) => (
-              <tr key={idx} className={styles.tr}>
-                {displayHeaders.map((header) => {
-                  const cellValue = row[header] || "-";
-                  const link = mergedData?.hyperlinks?.[idx]?.[header];
+            {paginatedRows.map((row, idx) => {
+              const actualRowIndex = startIndex + idx; // Get actual row index for hyperlinks
+              return (
+                <tr key={actualRowIndex} className={styles.tr}>
+                  {displayHeaders.map((header) => {
+                    const cellValue = row[header] || "-";
+                    const link = mergedData?.hyperlinks?.[actualRowIndex]?.[header];
 
-                  return (
-                    <td key={header} className={styles.td}>
-                      {link ? (
-                        <a
-                          href={link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={styles.linkCell}
-                        >
-                          {cellValue}
-                        </a>
-                      ) : (
-                        cellValue
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                    return (
+                      <td key={header} className={styles.td}>
+                        {link ? (
+                          <a
+                            href={link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={styles.linkCell}
+                          >
+                            {cellValue}
+                          </a>
+                        ) : (
+                          cellValue
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+      
+      {/* ✅ NEW: Pagination controls */}
+      {totalPages > 1 && (
+        <div style={{
+          marginTop: '20px',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '10px',
+          flexWrap: 'wrap'
+        }}>
+          <button
+            onClick={() => goToPage(1)}
+            disabled={currentPage === 1}
+            className={styles.button}
+            style={{
+              padding: '8px 12px',
+              opacity: currentPage === 1 ? 0.5 : 1,
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+            }}
+          >
+            First
+          </button>
+          
+          <button
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+            className={styles.button}
+            style={{
+              padding: '8px 12px',
+              opacity: currentPage === 1 ? 0.5 : 1,
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Previous
+          </button>
+          
+          {/* Page numbers */}
+          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+            {(() => {
+              const pages = [];
+              const maxPagesToShow = 7;
+              let startPage = Math.max(1, currentPage - 3);
+              let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+              
+              // Adjust start if we're near the end
+              if (endPage - startPage < maxPagesToShow - 1) {
+                startPage = Math.max(1, endPage - maxPagesToShow + 1);
+              }
+              
+              // Show first page if not in range
+              if (startPage > 1) {
+                pages.push(
+                  <button
+                    key={1}
+                    onClick={() => goToPage(1)}
+                    className={styles.button}
+                    style={{
+                      padding: '8px 12px',
+                      minWidth: '40px',
+                      background: '#e2e8f0'
+                    }}
+                  >
+                    1
+                  </button>
+                );
+                if (startPage > 2) {
+                  pages.push(<span key="ellipsis1" style={{ padding: '0 5px' }}>...</span>);
+                }
+              }
+              
+              // Show page numbers in range
+              for (let i = startPage; i <= endPage; i++) {
+                pages.push(
+                  <button
+                    key={i}
+                    onClick={() => goToPage(i)}
+                    className={styles.button}
+                    style={{
+                      padding: '8px 12px',
+                      minWidth: '40px',
+                      background: currentPage === i ? '#4299e1' : '#e2e8f0',
+                      color: currentPage === i ? 'white' : 'black',
+                      fontWeight: currentPage === i ? 'bold' : 'normal'
+                    }}
+                  >
+                    {i}
+                  </button>
+                );
+              }
+              
+              // Show last page if not in range
+              if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                  pages.push(<span key="ellipsis2" style={{ padding: '0 5px' }}>...</span>);
+                }
+                pages.push(
+                  <button
+                    key={totalPages}
+                    onClick={() => goToPage(totalPages)}
+                    className={styles.button}
+                    style={{
+                      padding: '8px 12px',
+                      minWidth: '40px',
+                      background: '#e2e8f0'
+                    }}
+                  >
+                    {totalPages}
+                  </button>
+                );
+              }
+              
+              return pages;
+            })()}
+          </div>
+          
+          <button
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className={styles.button}
+            style={{
+              padding: '8px 12px',
+              opacity: currentPage === totalPages ? 0.5 : 1,
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Next
+          </button>
+          
+          <button
+            onClick={() => goToPage(totalPages)}
+            disabled={currentPage === totalPages}
+            className={styles.button}
+            style={{
+              padding: '8px 12px',
+              opacity: currentPage === totalPages ? 0.5 : 1,
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Last
+          </button>
+          
+          {/* Page jump input */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '10px' }}>
+            <span style={{ fontSize: '14px' }}>Go to:</span>
+            <input
+              type="number"
+              min="1"
+              max={totalPages}
+              value={currentPage}
+              onChange={(e) => {
+                const page = parseInt(e.target.value);
+                if (page >= 1 && page <= totalPages) {
+                  goToPage(page);
+                }
+              }}
+              className={styles.input}
+              style={{ width: '70px', padding: '6px', textAlign: 'center' }}
+            />
+            <span style={{ fontSize: '14px', color: '#666' }}>of {totalPages}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
